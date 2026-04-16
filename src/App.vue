@@ -17,8 +17,8 @@ const createId = () =>
 const createEntry = () => ({
   id: createId(),
   date: "",
-  start: "09:00",
-  end: "18:00"
+  start: "",
+  end: ""
 });
 
 const entries = ref([createEntry()]);
@@ -432,7 +432,7 @@ const normalizeTimeInput = (entry, field) => {
       </p>
 
       <div class="report-row">
-        <p class="report-text">오류가 있을 경우<a class="report-link" href="mailto:jisuk@cttd.co.kr?subject=%EC%98%A4%EB%A5%98%20%EC%8B%A0%EA%B3%A0">여기</a>로 알려주세요. 메일이 열리지 않는 경우<button class="report-copy-button" type="button" @click="copyReportEmail">주소 복사</button></p>
+        <p class="report-text">오류가 있을 경우 <a class="report-link" href="mailto:jisuk@cttd.co.kr?subject=%EC%98%A4%EB%A5%98%20%EC%8B%A0%EA%B3%A0">여기</a>로 알려주세요. 메일이 열리지 않는 경우 👉🏻<button class="report-copy-button" type="button" @click="copyReportEmail">주소 복사</button></p>
       </div>
     </section>
 
