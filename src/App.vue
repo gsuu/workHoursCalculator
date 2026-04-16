@@ -1000,14 +1000,15 @@ select {
   align-items: center;
   min-height: 40px;
   padding: 10px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid #dcdce2;
   border-radius: var(--radius-sm);
-  background: #f3f3f5;
+  background: #ececf0;
   color: var(--muted);
 }
 
 .static-field.inactive {
-  background: #fcfcfd;
+  background: #e6e7eb;
+  color: #52525b;
 }
 
 input:focus,
