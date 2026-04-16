@@ -542,7 +542,7 @@ const updateMonthlyFile = async (type, event) => {
         </div>
         <div class="guide-row">
           <strong>퇴근 누락/미신청</strong>
-          <span>출퇴근만 늦게 찍혔다고 전부 초과근무로 잡지 않습니다. 상세표에서 연장 신청이 실제로 반영되지 않은 날은 초과근무 계산에서 제외하고, 퇴근이 누락되면 상세표의 8시/9시/10시 출근 규칙 기준 퇴근시각으로 보정합니다. 퇴근이 늦게 찍혀 있어도 상세표 연장/야간이 0이면 미신청으로 보고 정규 퇴근시각까지만 인정합니다.</span>
+          <span>퇴근이 늦게 찍혀 있어도 상세표 연장/야간이 0이면 미신청으로 보고 정규 퇴근시각까지만 인정합니다.</span>
         </div>
         <div class="guide-row">
           <strong>지급휴가(d)</strong>
