@@ -65,6 +65,10 @@ test("휴일 8시간 근무는 150% 환산으로 계산된다", () => {
   assert.equal(result.total, 480);
   assert.equal(result.weighted, 720);
   assert.equal(result.weekendHolidayWeighted, 720);
+  assert.equal(result.holidayOvertimeMinutes, 480);
+  assert.equal(result.holidayNightMinutes, 0);
+  assert.equal(result.holidayOvertimeGrantMinutes, 720);
+  assert.equal(result.holidayNightGrantMinutes, 0);
 });
 
 test("휴일 야간 포함 근무는 휴일 기준 가산으로 계산된다", () => {
@@ -78,6 +82,10 @@ test("휴일 야간 포함 근무는 휴일 기준 가산으로 계산된다", (
   assert.equal(result.total, 720);
   assert.equal(result.weighted, 1440);
   assert.equal(result.weekendHolidayWeighted, 1440);
+  assert.equal(result.holidayOvertimeMinutes, 240);
+  assert.equal(result.holidayNightMinutes, 480);
+  assert.equal(result.holidayOvertimeGrantMinutes, 360);
+  assert.equal(result.holidayNightGrantMinutes, 1080);
 });
 
 test("토요일은 휴무일로 분류된다", () => {
@@ -90,7 +98,7 @@ test("토요일은 휴무일로 분류된다", () => {
   assert.equal(result.error, "");
   assert.equal(result.workMode, "offday");
   assert.equal(result.total, 480);
-  assert.equal(result.weekendHolidayWeighted, 480);
+  assert.equal(result.weekendHolidayWeighted, 720);
 });
 
 test("점심시간을 포함하지 않는 근무는 자동 휴게가 적용되지 않는다", () => {
@@ -186,6 +194,77 @@ test("존재하지 않는 시간은 오류를 반환한다", () => {
 
   assert.notEqual(result.error, "");
   assert.equal(result.total, 0);
+});
+
+test("출근 시각이 10시여도 22시 전 퇴근이면 야간근로가 아니다", () => {
+  const result = calculateEntry({
+    date: "2026-04-15",
+    start: "10:00",
+    end: "19:00"
+  });
+
+  assert.equal(result.error, "");
+  assert.equal(result.total, 480);
+  assert.equal(result.weighted, 480);
+  assert.equal(result.weekday150, 0);
+  assert.equal(result.weekday200, 0);
+});
+
+test("22시에 딱 퇴근하면 야간근로가 발생하지 않는다", () => {
+  const result = calculateEntry({
+    date: "2026-04-15",
+    start: "10:00",
+    end: "22:00"
+  });
+
+  assert.equal(result.error, "");
+  assert.equal(result.total, 660);
+  assert.equal(result.weekday150, 180);
+  assert.equal(result.weekday200, 0);
+});
+
+test("10시 출근이어도 22시 이후 실제 근무분만 야간근로로 계산된다", () => {
+  const result = calculateEntry({
+    date: "2026-04-15",
+    start: "10:00",
+    end: "22:30"
+  });
+
+  assert.equal(result.error, "");
+  assert.equal(result.total, 690);
+  assert.equal(result.weekday150, 180);
+  assert.equal(result.weekday200, 30);
+});
+
+test("휴무일 4시간 근무는 전부 1.5배 휴가시간으로 계산된다", () => {
+  const result = calculateEntry({
+    date: "2026-04-18",
+    start: "13:00",
+    end: "17:00"
+  });
+
+  assert.equal(result.error, "");
+  assert.equal(result.workMode, "offday");
+  assert.equal(result.total, 240);
+  assert.equal(result.weekendHolidayWeighted, 360);
+  assert.equal(result.leaveGrantMinutes, 360);
+  assert.equal(result.nightTotal, 0);
+  assert.equal(result.holidayOvertimeMinutes, 240);
+  assert.equal(result.holidayNightMinutes, 0);
+  assert.equal(result.holidayOvertimeGrantMinutes, 360);
+  assert.equal(result.holidayNightGrantMinutes, 0);
+});
+
+test("평일 야간 정규근로와 야간 연장은 총 야간시간과 휴가시간이 분리 계산된다", () => {
+  const result = calculateEntry({
+    date: "2026-04-15",
+    start: "18:00",
+    end: "03:00"
+  });
+
+  assert.equal(result.error, "");
+  assert.equal(result.nightTotal, 300);
+  assert.equal(result.leaveGrantMinutes, 480);
 });
 
 test("합계 통계는 평일 150/200과 휴일 환산을 정확히 누적한다", () => {

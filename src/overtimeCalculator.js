@@ -138,6 +138,30 @@ export const getWorkTypeMeta = (value) => {
   };
 };
 
+export const getWorkTypeMetaByMode = (mode) => {
+  if (mode === "holiday") {
+    return {
+      mode: "holiday",
+      label: "휴일",
+      description: "일요일과 공휴일은 휴일 기준으로 계산합니다."
+    };
+  }
+
+  if (mode === "offday") {
+    return {
+      mode: "offday",
+      label: "휴무일",
+      description: "토요일은 휴무일 근무 기준으로 계산합니다."
+    };
+  }
+
+  return {
+    mode: "ordinary",
+    label: "평일",
+    description: "평일 근무 기준으로 계산합니다."
+  };
+};
+
 export const isNightMinute = (minute) => {
   const normalized = ((minute % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
   return normalized >= 1320 || normalized < 360;
@@ -268,7 +292,15 @@ export const classifyHoliday = (intervals) => {
     weighted,
     weekday150: 0,
     weekday200: 0,
-    weekendHolidayWeighted: weighted
+    weekendHolidayWeighted: weighted,
+    overtimeTotal: 0,
+    nightTotal: nightWithin + nightOver,
+    holidayWorkMinutes: dayWithin + nightWithin + dayOver + nightOver,
+    leaveGrantMinutes: weighted,
+    holidayOvertimeMinutes: dayWithin + dayOver,
+    holidayNightMinutes: nightWithin + nightOver,
+    holidayOvertimeGrantMinutes: dayWithin * 1.5 + dayOver * 2,
+    holidayNightGrantMinutes: nightWithin * 2 + nightOver * 2.5
   };
 };
 
@@ -301,19 +333,33 @@ export const classifyNormal = (intervals, priorWeekMinutes, mode) => {
     regularRemain = Math.max(regularRemain - regular, 0);
   }
 
-  const weighted = regularDay * 1 + (regularNight + overtimeDay) * 1.5 + overtimeNight * 2;
+  const ordinaryGrant = (regularNight + overtimeDay) * 1.5 + overtimeNight * 2;
+  const offdayGrant = (regularDay + overtimeDay) * 1.5 + (regularNight + overtimeNight) * 2;
+  const weighted = mode === "offday"
+    ? offdayGrant
+    : regularDay * 1 + ordinaryGrant;
 
   return {
     total,
     weighted,
     weekday150: mode === "ordinary" ? regularNight + overtimeDay : 0,
     weekday200: mode === "ordinary" ? overtimeNight : 0,
-    weekendHolidayWeighted: mode === "ordinary" ? 0 : weighted
+    weekendHolidayWeighted: mode === "ordinary" ? 0 : weighted,
+    overtimeTotal: mode === "ordinary" ? overtimeDay + overtimeNight : 0,
+    nightTotal: regularNight + overtimeNight,
+    holidayWorkMinutes: mode === "ordinary" ? 0 : total,
+    leaveGrantMinutes: mode === "ordinary" ? ordinaryGrant : weighted,
+    holidayOvertimeMinutes: mode === "ordinary" ? 0 : regularDay + overtimeDay,
+    holidayNightMinutes: mode === "ordinary" ? 0 : regularNight + overtimeNight,
+    holidayOvertimeGrantMinutes: mode === "ordinary" ? 0 : (regularDay + overtimeDay) * 1.5,
+    holidayNightGrantMinutes: mode === "ordinary" ? 0 : (regularNight + overtimeNight) * 2
   };
 };
 
 export const calculateEntry = (entry, priorWeekMinutes = 0) => {
-  const meta = getWorkTypeMeta(entry.date);
+  const meta = entry.workModeOverride
+    ? getWorkTypeMetaByMode(entry.workModeOverride)
+    : getWorkTypeMeta(entry.date);
   const blankView = {
     error: "",
     total: 0,
@@ -321,6 +367,14 @@ export const calculateEntry = (entry, priorWeekMinutes = 0) => {
     weekday150: 0,
     weekday200: 0,
     weekendHolidayWeighted: 0,
+    overtimeTotal: 0,
+    nightTotal: 0,
+    holidayWorkMinutes: 0,
+    leaveGrantMinutes: 0,
+    holidayOvertimeMinutes: 0,
+    holidayNightMinutes: 0,
+    holidayOvertimeGrantMinutes: 0,
+    holidayNightGrantMinutes: 0,
     workMode: meta?.mode ?? null,
     workModeLabel: meta?.label ?? "",
     workModeDescription: meta?.description ?? "",
@@ -361,6 +415,14 @@ export const calculateEntry = (entry, priorWeekMinutes = 0) => {
       weekday150: result.weekday150,
       weekday200: result.weekday200,
       weekendHolidayWeighted: result.weekendHolidayWeighted,
+      overtimeTotal: result.overtimeTotal,
+      nightTotal: result.nightTotal,
+      holidayWorkMinutes: result.holidayWorkMinutes,
+      leaveGrantMinutes: result.leaveGrantMinutes,
+      holidayOvertimeMinutes: result.holidayOvertimeMinutes,
+      holidayNightMinutes: result.holidayNightMinutes,
+      holidayOvertimeGrantMinutes: result.holidayOvertimeGrantMinutes,
+      holidayNightGrantMinutes: result.holidayNightGrantMinutes,
       workMode: meta.mode,
       workModeLabel: meta.label,
       workModeDescription: meta.description,

@@ -1,51 +1,20 @@
 <script setup>
-import { computed, nextTick, ref } from "vue";
-import { VueDatePicker } from "@vuepic/vue-datepicker";
-import { ko } from "date-fns/locale";
-import {
-  calculateEntry,
-  calculateSummaryStats,
-  formatDateOnly,
-  getCalendarDayKind
-} from "./overtimeCalculator.js";
-import "@vuepic/vue-datepicker/dist/main.css";
+import { computed, ref } from "vue";
 
-const createId = () =>
-  globalThis.crypto?.randomUUID?.() ??
-  `entry-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+import { parseMonthlyResultFiles } from "./monthlyAttendanceImport.js";
 
-const createEntry = () => ({
-  id: createId(),
-  date: "",
-  start: "",
-  end: ""
-});
-
-const entries = ref([createEntry()]);
-const datePickerRefs = new Map();
-const startInputRefs = new Map();
+const attendanceImportFile = ref(null);
+const detailImportFile = ref(null);
+const monthlyImportLoading = ref(false);
+const monthlyImportError = ref("");
+const monthlyWorkers = ref([]);
+const previousCarryHoursMap = ref({});
+const selectedPart = ref("all");
+const selectedSort = ref("name");
 const copyToastMessage = ref("");
 const copyToastVisible = ref(false);
+
 let copyToastTimer = null;
-
-const entryViews = computed(() =>
-  entries.value.map((entry, index) => ({
-    index: index + 1,
-    entry,
-    ...calculateEntry(entry)
-  }))
-);
-
-const summaryStats = computed(() => calculateSummaryStats(entryViews.value));
-
-const summaryCopyText = computed(() =>
-  [
-    String(summaryStats.value.weekday150Hours),
-    String(summaryStats.value.weekday150RemainMinutes),
-    String(summaryStats.value.weekday200Hours),
-    String(summaryStats.value.weekday200RemainMinutes)
-  ].join("\t")
-);
 
 const openCopyToast = (message) => {
   if (copyToastTimer) {
@@ -60,15 +29,6 @@ const openCopyToast = (message) => {
   }, 2600);
 };
 
-const copySummaryStats = async () => {
-  try {
-    await navigator.clipboard.writeText(summaryCopyText.value);
-    openCopyToast("평일 데이터가 복사 되었습니다. 구글 스프레드시트에 Ctrl+V 해서 붙여넣기 하세요.");
-  } catch {
-    openCopyToast("복사에 실패했습니다. 다시 시도해 주세요.");
-  }
-};
-
 const copyReportEmail = async () => {
   try {
     await navigator.clipboard.writeText("jisuk@cttd.co.kr");
@@ -78,321 +38,476 @@ const copyReportEmail = async () => {
   }
 };
 
-const addEntry = () => {
-  entries.value.push(createEntry());
+const copyMonthlyTable = async () => {
+  if (!filteredMonthlyRows.value.length) return;
+
+  const headers = [
+    "월별",
+    "번호",
+    "Part",
+    "팀원명",
+    "전월 이월 휴가(h)",
+    "평일 연장근무(시)",
+    "평일 연장근무(분)",
+    "평일 야간근무(시)",
+    "평일 야간근무(분)",
+    "휴일/휴무일 연장근무(시)",
+    "휴일/휴무일 연장근무(분)",
+    "휴일/휴무일 야간근무(시)",
+    "휴일/휴무일 야간근무(분)",
+    "환산시간(h)",
+    "이월 휴가(h)",
+    "지급휴가(d)",
+    "연장근무 일수"
+  ];
+
+  const lines = filteredMonthlyRows.value.map((row) => [
+    "3월",
+    String(row.number),
+    row.part,
+    row.name,
+    row.previousCarryInput || "0",
+    row.overtimeHoursText,
+    row.overtimeRemainMinutesText,
+    row.nightHoursText,
+    row.nightRemainMinutesText,
+    row.holidayOvertimeHoursText,
+    row.holidayOvertimeRemainMinutesText,
+    row.holidayNightHoursText,
+    row.holidayNightRemainMinutesText,
+    row.totalLeaveHoursText,
+    row.carryLeaveHoursText,
+    row.grantDaysText,
+    String(row.overtimeDayCount)
+  ].join("\t"));
+
+  try {
+    await navigator.clipboard.writeText([headers.join("\t"), ...lines].join("\n"));
+    openCopyToast("월별 결과 표가 복사되었습니다. 엑셀에 바로 붙여넣기 하세요.");
+  } catch {
+    openCopyToast("결과 표 복사에 실패했습니다. 다시 시도해 주세요.");
+  }
 };
 
-const resetEntries = () => {
-  entries.value = [createEntry()];
+const escapeCsvCell = (value) => {
+  const text = String(value ?? "");
+  if (/[",\n]/.test(text)) {
+    return `"${text.replace(/"/g, "\"\"")}"`;
+  }
+  return text;
 };
 
-const removeEntry = (id) => {
-  entries.value = entries.value.filter((entry) => entry.id !== id);
+const downloadMonthlyTableCsv = async () => {
+  if (!filteredMonthlyRows.value.length) return;
+
+  const headers = [
+    "월별",
+    "번호",
+    "Part",
+    "팀원명",
+    "전월 이월 휴가(h)",
+    "평일 연장근무(시)",
+    "평일 연장근무(분)",
+    "평일 야간근무(시)",
+    "평일 야간근무(분)",
+    "휴일/휴무일 연장근무(시)",
+    "휴일/휴무일 연장근무(분)",
+    "휴일/휴무일 야간근무(시)",
+    "휴일/휴무일 야간근무(분)",
+    "환산시간(h)",
+    "이월 휴가(h)",
+    "지급휴가(d)",
+    "연장근무 일수"
+  ];
+
+  const rows = filteredMonthlyRows.value.map((row) => [
+    "3월",
+    String(row.number),
+    row.part,
+    row.name,
+    row.previousCarryInput || "0",
+    row.overtimeHoursText,
+    row.overtimeRemainMinutesText,
+    row.nightHoursText,
+    row.nightRemainMinutesText,
+    row.holidayOvertimeHoursText,
+    row.holidayOvertimeRemainMinutesText,
+    row.holidayNightHoursText,
+    row.holidayNightRemainMinutesText,
+    row.totalLeaveHoursText,
+    row.carryLeaveHoursText,
+    row.grantDaysText,
+    String(row.overtimeDayCount)
+  ]);
+
+  const csv = [headers, ...rows]
+    .map((line) => line.map(escapeCsvCell).join(","))
+    .join("\r\n");
+
+  const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  try {
+    link.href = url;
+    link.download = selectedPart.value === "all"
+      ? "월별결과표.csv"
+      : `월별결과표_${selectedPart.value}.csv`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    openCopyToast("월별 결과 표 CSV가 다운로드되었습니다.");
+  } catch {
+    openCopyToast("CSV 다운로드에 실패했습니다. 다시 시도해 주세요.");
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 };
 
-const formatTimeInput = (value) => {
-  const digits = String(value ?? "").replace(/\D/g, "").slice(0, 4);
-  if (digits.length <= 2) return digits;
-  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+const parseNumberInput = (value) => {
+  const number = Number.parseFloat(String(value ?? "").trim());
+  return Number.isFinite(number) ? number : 0;
 };
 
-const updateTimeInput = (entry, field, value) => {
-  entry[field] = formatTimeInput(value);
+const sanitizeDecimalInput = (value) => {
+  const text = String(value ?? "").replace(/[^\d.]/g, "");
+  if (!text) return "";
+
+  const [integerPart, ...decimalParts] = text.split(".");
+  if (decimalParts.length === 0) {
+    return integerPart;
+  }
+
+  return `${integerPart}.${decimalParts.join("")}`;
 };
 
-const setStartInputRef = (entryId, element) => {
-  if (element) {
-    startInputRefs.set(entryId, element);
+const toFixedText = (value, digits = 2) => Number(value || 0).toFixed(digits);
+const toPaddedText = (value) => String(Math.max(0, Math.trunc(value))).padStart(2, "0");
+const toHalfDayFloor = (hours) => Math.floor(Math.max(0, hours) * 2 / 8) / 2;
+const getGrantedLeaveHours = (grantDays) => grantDays * 8;
+
+const partOptions = computed(() => {
+  const parts = [...new Set(monthlyWorkers.value.map((worker) => worker.part).filter(Boolean))];
+  return ["all", ...parts];
+});
+
+const monthlyRows = computed(() =>
+  monthlyWorkers.value.map((worker, index) => {
+    const previousCarryInput = previousCarryHoursMap.value[worker.employeeId] ?? "";
+    const previousCarryHours = Math.max(0, parseNumberInput(previousCarryInput));
+    const overtimeConvertedHours = worker.overtimeMinutes * 1.5 / 60;
+    const nightConvertedHours = worker.nightMinutes * 2 / 60;
+    const holidayOvertimeConvertedHours = worker.holidayOvertimeGrantMinutes / 60;
+    const holidayNightConvertedHours = worker.holidayNightGrantMinutes / 60;
+    const totalLeaveHours = previousCarryHours
+      + overtimeConvertedHours
+      + nightConvertedHours
+      + holidayOvertimeConvertedHours
+      + holidayNightConvertedHours;
+    const grantDays = toHalfDayFloor(totalLeaveHours);
+    const grantedLeaveHours = getGrantedLeaveHours(grantDays);
+    const carryLeaveHours = Math.max(0, totalLeaveHours - grantedLeaveHours);
+
+    return {
+      ...worker,
+      number: index + 1,
+      previousCarryInput,
+      overtimeHoursText: toPaddedText(Math.floor(worker.overtimeMinutes / 60)),
+      overtimeRemainMinutesText: toPaddedText(worker.overtimeMinutes % 60),
+      nightHoursText: toPaddedText(Math.floor(worker.nightMinutes / 60)),
+      nightRemainMinutesText: toPaddedText(worker.nightMinutes % 60),
+      holidayOvertimeHoursText: toPaddedText(Math.floor(worker.holidayOvertimeMinutes / 60)),
+      holidayOvertimeRemainMinutesText: toPaddedText(worker.holidayOvertimeMinutes % 60),
+      holidayNightHoursText: toPaddedText(Math.floor(worker.holidayNightMinutes / 60)),
+      holidayNightRemainMinutesText: toPaddedText(worker.holidayNightMinutes % 60),
+      totalLeaveHoursText: toFixedText(totalLeaveHours, 2),
+      carryLeaveHoursText: toFixedText(carryLeaveHours, 2),
+      grantDaysText: Number.isInteger(grantDays) ? String(grantDays) : grantDays.toFixed(1)
+    };
+  })
+);
+
+const filteredMonthlyRows = computed(() => {
+  const rows = selectedPart.value === "all"
+    ? monthlyRows.value
+    : monthlyRows.value.filter((row) => row.part === selectedPart.value);
+
+  const sortedRows = [...rows].sort((left, right) => {
+    if (selectedSort.value === "grantDays") {
+      const leftValue = Number.parseFloat(left.grantDaysText) || 0;
+      const rightValue = Number.parseFloat(right.grantDaysText) || 0;
+      if (rightValue !== leftValue) return rightValue - leftValue;
+      return left.name.localeCompare(right.name, "ko");
+    }
+
+    if (selectedSort.value === "overtimeDays") {
+      if (right.overtimeDayCount !== left.overtimeDayCount) {
+        return right.overtimeDayCount - left.overtimeDayCount;
+      }
+      return left.name.localeCompare(right.name, "ko");
+    }
+
+    return left.name.localeCompare(right.name, "ko");
+  });
+
+  return sortedRows.map((row, index) => ({
+    ...row,
+    number: index + 1
+  }));
+});
+
+const updateTextMap = (target, employeeId, value) => {
+  target.value = {
+    ...target.value,
+    [employeeId]: value
+  };
+};
+
+const updateCarryHoursInput = (employeeId, value) => {
+  const trimmed = String(value ?? "");
+
+  if (!trimmed) {
+    updateTextMap(previousCarryHoursMap, employeeId, "");
     return;
   }
 
-  startInputRefs.delete(entryId);
+  updateTextMap(previousCarryHoursMap, employeeId, sanitizeDecimalInput(trimmed));
 };
 
-const setDatePickerRef = (entryId, instance) => {
-  if (instance) {
-    datePickerRefs.set(entryId, instance);
+const loadMonthlyWorkers = async () => {
+  if (!attendanceImportFile.value || !detailImportFile.value) {
+    monthlyWorkers.value = [];
+    monthlyImportError.value = "";
+    selectedPart.value = "all";
+    selectedSort.value = "name";
     return;
   }
 
-  datePickerRefs.delete(entryId);
+  monthlyImportLoading.value = true;
+  monthlyImportError.value = "";
+
+  try {
+    const parsed = await parseMonthlyResultFiles({
+      attendanceFile: attendanceImportFile.value,
+      detailFile: detailImportFile.value
+    });
+    monthlyWorkers.value = parsed.workers;
+    selectedPart.value = "all";
+    selectedSort.value = "name";
+  } catch (error) {
+    monthlyWorkers.value = [];
+    selectedPart.value = "all";
+    selectedSort.value = "name";
+    monthlyImportError.value = error instanceof Error
+      ? error.message
+      : "파일을 읽는 중 오류가 발생했습니다.";
+  } finally {
+    monthlyImportLoading.value = false;
+  }
 };
 
-const openDatePickerMenu = (entryId) => {
-  datePickerRefs.get(entryId)?.openMenu?.();
-};
+const updateMonthlyFile = async (type, event) => {
+  const [file] = event.target.files ?? [];
 
-const focusStartInput = async (entryId) => {
-  await nextTick();
-  const input = startInputRefs.get(entryId);
-  input?.focus();
-  input?.select?.();
-};
-
-const normalizeTimeInput = (entry, field) => {
-  const value = String(entry[field] ?? "").trim();
-  if (!value) {
-    entry[field] = "";
-    return;
+  if (type === "attendance") {
+    attendanceImportFile.value = file ?? null;
+  } else {
+    detailImportFile.value = file ?? null;
   }
 
-  const formatted = formatTimeInput(value);
-  if (!/^\d{2}:\d{2}$/.test(formatted)) {
-    entry[field] = formatted;
-    return;
-  }
-
-  const [hours, minutes] = formatted.split(":").map(Number);
-  if (hours > 23 || minutes > 59) {
-    entry[field] = formatted;
-    return;
-  }
-
-  entry[field] = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  await loadMonthlyWorkers();
 };
 </script>
 
 <template>
   <main>
     <section class="panel hero">
-      <div class="hero-head">
-        <div class="hero-copy">
-          <div class="logo-slot" aria-hidden="true">
-            <svg viewBox="0 0 2666.667 499.921" role="img">
-              <title>CTTD</title>
-              <defs>
-                <symbol id="logo-c" viewBox="0 0 488 509">
-                  <path d="M32 122c21-38 51-69 89-90S203 0 252 0c59 0 109 16 152 46 43 32 71 75 84 128H355c-10-20-24-36-43-48-17-10-39-16-61-16-39 0-68 14-92 40-23 26-35 60-35 104s12 79 35 106c24 25 53 38 92 38a108 108 0 0 0 105-64h132c-13 55-41 98-84 128s-93 47-152 47c-49 0-92-11-131-32-38-23-68-52-89-91S0 304 0 254s11-93 32-132" />
-                </symbol>
-                <symbol id="logo-t" viewBox="0 0 433 435">
-                  <path d="M433 267H268v168H164V267H0v-99h164V0h104v168h165z" />
-                </symbol>
-                <symbol id="logo-d" viewBox="0 0 449 500">
-                  <path d="M287 357c25-25 38-61 38-106 0-47-13-83-38-108s-62-39-108-39h-58v291h58c46 0 82-12 108-38m38-325c39 21 70 51 91 88 23 37 33 81 33 131s-10 92-33 130c-21 38-52 67-91 88-40 22-86 31-138 31H0V0h187c53 0 98 11 138 32" />
-                </symbol>
-                <symbol id="logo-basic" viewBox="0 0 2666.667 499.921">
-                  <use href="#logo-c" x="0" y="0" width="479.608" height="499.921"></use>
-                  <use href="#logo-t" x="781.050" y="38.818" width="425.809" height="425.784"></use>
-                  <use href="#logo-t" x="1484.900" y="38.818" width="425.809" height="425.784"></use>
-                  <use href="#logo-d" x="2225.465" y="5.604" width="441.201" height="490.817"></use>
-                </symbol>
-              </defs>
-              <use href="#logo-basic"></use>
-            </svg>
-          </div>
-          <h1>초과근무시간 계산기</h1>
-          <p>날짜와 시간만 입력하면 근무 유형과 점심 휴게가 자동으로 반영됩니다.</p>
+      <div class="hero-copy">
+        <div class="logo-slot" aria-hidden="true">
+          <svg viewBox="0 0 2666.667 499.921" role="img">
+            <title>CTTD</title>
+            <defs>
+              <symbol id="logo-c" viewBox="0 0 488 509">
+                <path d="M32 122c21-38 51-69 89-90S203 0 252 0c59 0 109 16 152 46 43 32 71 75 84 128H355c-10-20-24-36-43-48-17-10-39-16-61-16-39 0-68 14-92 40-23 26-35 60-35 104s12 79 35 106c24 25 53 38 92 38a108 108 0 0 0 105-64h132c-13 55-41 98-84 128s-93 47-152 47c-49 0-92-11-131-32-38-23-68-52-89-91S0 304 0 254s11-93 32-132" />
+              </symbol>
+              <symbol id="logo-t" viewBox="0 0 433 435">
+                <path d="M433 267H268v168H164V267H0v-99h164V0h104v168h165z" />
+              </symbol>
+              <symbol id="logo-d" viewBox="0 0 449 500">
+                <path d="M287 357c25-25 38-61 38-106 0-47-13-83-38-108s-62-39-108-39h-58v291h58c46 0 82-12 108-38m38-325c39 21 70 51 91 88 23 37 33 81 33 131s-10 92-33 130c-21 38-52 67-91 88-40 22-86 31-138 31H0V0h187c53 0 98 11 138 32" />
+              </symbol>
+              <symbol id="logo-basic" viewBox="0 0 2666.667 499.921">
+                <use href="#logo-c" x="0" y="0" width="479.608" height="499.921"></use>
+                <use href="#logo-t" x="781.050" y="38.818" width="425.809" height="425.784"></use>
+                <use href="#logo-t" x="1484.900" y="38.818" width="425.809" height="425.784"></use>
+                <use href="#logo-d" x="2225.465" y="5.604" width="441.201" height="490.817"></use>
+              </symbol>
+            </defs>
+            <use href="#logo-basic"></use>
+          </svg>
         </div>
+        <h1>초과근무시간 계산기</h1>
       </div>
     </section>
 
     <section class="panel">
+        <div class="head">
+          <div>
+            <h2>월별 파일 업로드</h2>
+            <ol class="upload-steps">
+              <li>하이웍스 -&gt; 인사/회계 -&gt; 인사근무 -&gt; 근무관리 -&gt; 전사 근무관리 -&gt; 근태현황 접속</li>
+              <li>대상기간, 부서 선택</li>
+              <li><b>근무결과(상세), 근무현황</b> 파일을 다운로드</li>
+              <li>업로드</li>
+            </ol>
+            <p class="upload-note">* 두 파일은 같은 월의 파일이어야 합니다.</p>
+          </div>
+        </div>
+
+      <div class="import-grid">
+        <label class="import-field">
+          <span>근태현황 파일</span>
+          <input type="file" accept=".xls,.xlsx" @change="updateMonthlyFile('attendance', $event)">
+          <small>{{ attendanceImportFile?.name ?? "선택된 파일이 없습니다." }}</small>
+        </label>
+
+        <label class="import-field">
+          <span>근무결과(상세) 파일</span>
+          <input type="file" accept=".xls,.xlsx" @change="updateMonthlyFile('detail', $event)">
+          <small>{{ detailImportFile?.name ?? "선택된 파일이 없습니다." }}</small>
+        </label>
+      </div>
+
+      <p v-if="monthlyImportLoading" class="sub import-status">파일을 읽고 월별 결과를 계산하는 중입니다.</p>
+      <p v-else-if="monthlyImportError" class="error import-error">{{ monthlyImportError }}</p>
+    </section>
+
+    <section v-if="monthlyRows.length > 0" class="panel">
       <div class="head">
         <div>
-          <h2>근무 입력</h2>
-          <p class="sub">입력한 근무를 왼쪽에서 관리하고 환산 통계는 오른쪽에서 바로 확인할 수 있습니다.</p>
+          <h2>월별 결과 표</h2>
+          <p class="sub result-sub">업로드한 파일을 기준으로 작업자별 환산 결과를 보여줍니다.</p>
         </div>
-        <div class="toolbar">
-          <button class="button secondary reset-button" type="button" @click="resetEntries">
-            전체 초기화
-          </button>
+      </div>
+      <div class="table-toolbar">
+        <div class="table-filters">
+          <label class="table-filter">
+            <span class="table-filter-label">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.5 3.5h11m-9.5 4h8m-6 4h5" />
+              </svg>
+              <span>Part</span>
+            </span>
+            <select v-model="selectedPart">
+              <option value="all">전체</option>
+              <option
+                v-for="part in partOptions.filter((part) => part !== 'all')"
+                :key="part"
+                :value="part"
+              >
+                {{ part }}
+              </option>
+            </select>
+          </label>
+          <label class="table-filter">
+            <span class="table-filter-label">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M5 3.5v9m0 0-2-2m2 2 2-2M11 12.5v-9m0 0-2 2m2-2 2 2" />
+              </svg>
+              <span>정렬</span>
+            </span>
+            <select v-model="selectedSort">
+              <option value="name">이름 순</option>
+              <option value="grantDays">지급휴가 많은 순</option>
+              <option value="overtimeDays">연장근무일수 많은 순</option>
+            </select>
+          </label>
+        </div>
+        <div class="table-actions">
+          <button class="table-action-button" type="button" @click="copyMonthlyTable">copy</button>
+          <button class="table-action-button" type="button" @click="downloadMonthlyTableCsv">download</button>
         </div>
       </div>
 
-      <div class="input-layout">
-        <div class="list">
-          <div v-for="view in entryViews" :key="view.entry.id" class="entry-row">
-            <article class="item">
-              <div class="grid">
-                <div class="field span3">
-                  <VueDatePicker
-                    :ref="(instance) => setDatePickerRef(view.entry.id, instance)"
-                    v-model="view.entry.date"
-                    @update:model-value="focusStartInput(view.entry.id)"
-                    model-type="yyyy-MM-dd"
-                    :locale="ko"
-                    :format="formatDateOnly"
-                    auto-apply
-                    :teleport="true"
-                    :hide-navigation="['time']"
-                    :time-picker="false"
-                    :enable-time-picker="false"
-                    :hide-input-icon="true"
-                    :clearable="false"
-                    placeholder="연도-월-일"
-                  >
-                    <template #trigger>
-                      <input
-                        :value="formatDateOnly(view.entry.date)"
-                        class="date-display-input"
-                        type="text"
-                        readonly
-                        placeholder="연도-월-일"
-                        autocomplete="off"
-                        @mousedown.prevent.stop
-                        @click.stop="openDatePickerMenu(view.entry.id)"
-                        @focus="openDatePickerMenu(view.entry.id)"
-                      >
-                    </template>
-                    <template #calendar-header="{ index, day }">
-                      <span
-                        :class="[
-                          'calendar-header-label',
-                          {
-                            saturday: index === 5,
-                            sunday: index === 6
-                          }
-                        ]"
-                      >
-                        {{ day }}
-                      </span>
-                    </template>
-                    <template #day="{ day, date }">
-                      <span
-                        :class="[
-                          'calendar-day-cell',
-                          `is-${getCalendarDayKind(date)}`
-                        ]"
-                      >
-                        {{ day }}
-                      </span>
-                    </template>
-                  </VueDatePicker>
-                </div>
-
-                <label>
-                  <span>출근</span>
-                  <input
-                    :ref="(element) => setStartInputRef(view.entry.id, element)"
-                    :value="view.entry.start"
-                    class="time-text-input"
-                    type="text"
-                    inputmode="numeric"
-                    maxlength="5"
-                    placeholder="09:00"
-                    autocomplete="off"
-                    @input="updateTimeInput(view.entry, 'start', $event.target.value)"
-                    @blur="normalizeTimeInput(view.entry, 'start')"
-                  >
-                </label>
-
-                <label>
-                  <span>퇴근</span>
-                  <input
-                    :value="view.entry.end"
-                    class="time-text-input"
-                    type="text"
-                    inputmode="numeric"
-                    maxlength="5"
-                    placeholder="18:00"
-                    autocomplete="off"
-                    @input="updateTimeInput(view.entry, 'end', $event.target.value)"
-                    @blur="normalizeTimeInput(view.entry, 'end')"
-                  >
-                </label>
-
-                <label>
-                  <span>점심 휴게</span>
-                  <div :class="['static-field', { inactive: !view.lunchBreakApplied }]">
-                    {{ view.lunchBreakLabel }}
-                  </div>
-                </label>
-
-                <div class="delete-cell">
-                  <button
-                    class="button danger icon-button"
-                    type="button"
-                    aria-label="입력 삭제"
-                    @click="removeEntry(view.entry.id)"
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path
-                        d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h2v8H7V9Zm4 0h2v8h-2V9Zm4 0h2v8h-2V9Z"
-                        fill="currentColor"
-                      />
-                      <path
-                        d="M6 7h12v13a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7Z"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        stroke-linejoin="round"
-                      />
-                    </svg>
-                  </button>
-                </div>
-
-                <div class="entry-meta" v-if="view.workModeLabel && !view.error">
-                  {{ view.workModeLabel }} 기준 · {{ view.workModeDescription }}
-                </div>
-                <div class="error">{{ view.error }}</div>
-              </div>
-            </article>
-          </div>
-
-          <div v-if="entryViews.length > 0" class="add-row">
-            <button
-              class="button primary icon-button bottom-add-button"
-              type="button"
-              aria-label="근무 추가"
-              @click="addEntry"
-            >
-              +
-            </button>
-          </div>
-
-          <div v-if="entryViews.length === 0" class="empty-state">
-            <p>현재 입력된 근무가 없습니다.</p>
-            <button class="button primary empty-add-button" type="button" @click="addEntry">
-              근무 추가
-            </button>
-          </div>
-        </div>
-
-        <aside class="summary-panel">
-          <div class="summary-head">
-            <h3>환산 통계</h3>
-            <p>구글 스프레드시트에 붙여넣기 쉽도록 가로 복사를 지원합니다.</p>
-          </div>
-
-          <div class="result-sheet">
-            <div class="result-sheet-title with-action">
-              <span>평일 계산된 데이터</span>
-              <button class="button copy-button copy-accent" type="button" @click="copySummaryStats">
-                copy
-              </button>
-            </div>
-            <div class="result-four-grid result-four-head">
-              <div class="result-group" style="grid-column: span 2;">연장(150%)</div>
-              <div class="result-group" style="grid-column: span 2;">야간(200%)</div>
-            </div>
-            <div class="result-four-grid result-four-label">
-              <div>시간</div>
-              <div>분</div>
-              <div>시간</div>
-              <div>분</div>
-            </div>
-            <div class="result-four-grid result-four-value">
-              <div>{{ summaryStats.weekday150Hours }}</div>
-              <div>{{ summaryStats.weekday150RemainMinutes }}</div>
-              <div>{{ summaryStats.weekday200Hours }}</div>
-              <div>{{ summaryStats.weekday200RemainMinutes }}</div>
-            </div>
-            <div class="result-caption">
-              <span>연장 적용 {{ summaryStats.weekday150Count }}건</span>
-              <span>야간 적용 {{ summaryStats.weekday200Count }}건</span>
-            </div>
-          </div>
-
-          <div class="result-sheet">
-            <div class="result-sheet-title">휴일 계산된 데이터</div>
-            <div class="result-single-head">휴일근무 총(h)</div>
-            <div class="result-single-value">{{ summaryStats.weekendHolidayWeightedText }}</div>
-            <div class="result-caption single">
-              <span>휴일·휴무일 적용 {{ summaryStats.weekendHolidayCount }}건</span>
-            </div>
-          </div>
-
-        </aside>
+      <div class="monthly-table-wrap">
+        <table class="monthly-table">
+          <colgroup>
+            <col style="width: 42px">
+            <col style="width: 38px">
+            <col style="width: 64px">
+            <col style="width: 82px">
+            <col style="width: 76px">
+            <col style="width: 40px">
+            <col style="width: 40px">
+            <col style="width: 40px">
+            <col style="width: 40px">
+            <col style="width: 40px">
+            <col style="width: 40px">
+            <col style="width: 40px">
+            <col style="width: 40px">
+            <col style="width: 74px">
+            <col style="width: 74px">
+            <col style="width: 60px">
+            <col style="width: 64px">
+          </colgroup>
+          <thead>
+            <tr>
+              <th rowspan="2">월별</th>
+              <th rowspan="2">번호</th>
+              <th rowspan="2">Part</th>
+              <th rowspan="2">팀원명</th>
+              <th rowspan="2" class="group-carry">전월 이월 휴가(h)</th>
+              <th colspan="2" class="group-overtime">평일 연장근무</th>
+              <th colspan="2" class="group-night">평일 야간근무</th>
+              <th colspan="2" class="group-holiday">휴일/휴무일 연장근무</th>
+              <th colspan="2" class="group-holiday">휴일/휴무일 야간근무</th>
+              <th rowspan="2" class="group-total">환산시간(h)</th>
+              <th rowspan="2" class="group-result-carry">이월 휴가(h)</th>
+              <th rowspan="2" class="group-highlight">지급휴가(d)</th>
+              <th rowspan="2" class="group-issue">연장근무 일수</th>
+            </tr>
+            <tr>
+              <th class="group-overtime-sub time-head">시</th>
+              <th class="group-overtime-sub time-head">분</th>
+              <th class="group-night-sub time-head">시</th>
+              <th class="group-night-sub time-head">분</th>
+              <th class="group-holiday-sub time-head">시</th>
+              <th class="group-holiday-sub time-head">분</th>
+              <th class="group-holiday-sub time-head">시</th>
+              <th class="group-holiday-sub time-head">분</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in filteredMonthlyRows" :key="row.employeeId">
+              <td>3월</td>
+              <td>{{ row.number }}</td>
+              <td>{{ row.part }}</td>
+              <td>{{ row.name }}</td>
+              <td class="cell-edit">
+                <input
+                  class="table-input number"
+                  type="text"
+                  inputmode="decimal"
+                  :value="row.previousCarryInput"
+                  placeholder="0"
+                  @input="updateCarryHoursInput(row.employeeId, $event.target.value)"
+                >
+              </td>
+              <td class="cell-overtime cell-time">{{ row.overtimeHoursText }}</td>
+              <td class="cell-overtime cell-time">{{ row.overtimeRemainMinutesText }}</td>
+              <td class="cell-night cell-time">{{ row.nightHoursText }}</td>
+              <td class="cell-night cell-time">{{ row.nightRemainMinutesText }}</td>
+              <td class="cell-holiday cell-time">{{ row.holidayOvertimeHoursText }}</td>
+              <td class="cell-holiday cell-time">{{ row.holidayOvertimeRemainMinutesText }}</td>
+              <td class="cell-holiday cell-time">{{ row.holidayNightHoursText }}</td>
+              <td class="cell-holiday cell-time">{{ row.holidayNightRemainMinutesText }}</td>
+              <td class="cell-total strong">{{ row.totalLeaveHoursText }}</td>
+              <td class="cell-result-carry strong">{{ row.carryLeaveHoursText }}</td>
+              <td class="cell-highlight strong">{{ row.grantDaysText }}</td>
+                <td class="cell-issue strong">{{ row.overtimeDayCount }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
@@ -400,7 +515,7 @@ const normalizeTimeInput = (entry, field) => {
       <div class="head">
         <div>
           <h2>근무 기준 안내</h2>
-          <p class="sub">계산은 아래 기준으로 적용합니다.</p>
+          <p class="sub">계산은 아래 기준으로 적용됩니다.</p>
         </div>
       </div>
 
@@ -411,29 +526,39 @@ const normalizeTimeInput = (entry, field) => {
         </div>
         <div class="guide-row">
           <strong>평일 근무</strong>
-          <span>1일 8시간 또는 1주 40시간 초과분은 연장근로, 22시~06시는 야간근로로 계산합니다.</span>
+          <span>1일 8시간 또는 1주 40시간 초과분을 연장근무로 보고, 22시부터 다음 날 6시까지를 야간근무로 계산합니다.</span>
         </div>
         <div class="guide-row">
           <strong>점심 휴게</strong>
-          <span>근무 시간이 11:30~12:30 구간을 포함하면 점심 휴게 60분이 자동으로 차감됩니다.</span>
+          <span>근무 시간이 11:30~12:30 구간을 포함하면 점심 휴게 60분을 자동으로 차감합니다.</span>
         </div>
         <div class="guide-row">
           <strong>휴무일 근무</strong>
-          <span>토요일은 휴무일 근무로 보고, 일반적인 연장 및 야간 가산 기준으로 계산합니다.</span>
+          <span>토요일은 휴무일로 보고 실제 근무시간을 1.5배, 야간분은 2.0배 기준으로 환산합니다.</span>
         </div>
         <div class="guide-row">
           <strong>휴일 근무</strong>
-          <span>일요일과 공휴일은 휴일근무 기준을 적용하고, 8시간 이내 1.5배, 초과분 2배, 야간은 별도 가산합니다.</span>
+          <span>일요일과 공휴일은 휴일 기준을 적용하고 8시간 이내 1.5배, 8시간 초과분은 2.0배, 야간은 별도 가산합니다.</span>
+        </div>
+        <div class="guide-row">
+          <strong>퇴근 누락/미신청</strong>
+          <span>출퇴근만 늦게 찍혔다고 전부 초과근무로 잡지 않습니다. 상세표에서 연장 신청이 실제로 반영되지 않은 날은 초과근무 계산에서 제외하고, 퇴근이 누락되면 상세표의 8시/9시/10시 출근 규칙 기준 퇴근시각으로 보정합니다. 퇴근이 늦게 찍혀 있어도 상세표 연장/야간이 0이면 미신청으로 보고 정규 퇴근시각까지만 인정합니다.</span>
+        </div>
+        <div class="guide-row">
+          <strong>지급휴가(d)</strong>
+          <span>환산시간을 8시간 = 1일 기준으로 계산하고, 0.5일 단위로 지급합니다. 이월 휴가는 4시간 미만만 유지됩니다.</span>
         </div>
       </div>
 
-      <p class="foot">
-        근로기준법 제50조, 제55조, 제56조 기준입니다. 상시 5인 이상 사업장과 일반적인 근로시간제를 전제로 합니다.
-      </p>
-
-      <div class="report-row">
-        <p class="report-text">오류가 있을 경우 <a class="report-link" href="mailto:jisuk@cttd.co.kr?subject=%EC%98%A4%EB%A5%98%20%EC%8B%A0%EA%B3%A0">여기</a>로 알려주세요. 메일이 열리지 않는 경우 👉🏻<button class="report-copy-button" type="button" @click="copyReportEmail">주소 복사</button></p>
-      </div>
+      <ul class="foot-list">
+        <li class="foot-item">
+          근로기준법 제50조, 제55조, 제56조 기준입니다. 상시 5인 이상 사업장과 일반적인 근로시간제를 전제로 합니다.
+        </li>
+        <li class="foot-item">
+          오류가 있을 경우 <a class="report-link" href="mailto:jisuk@cttd.co.kr?subject=%EC%98%A4%EB%A5%98%20%EC%8B%A0%EA%B3%A0">여기</a>로 알려주세요.
+          메일이 열리지 않는 경우 👉🏻<button class="report-copy-button" type="button" @click="copyReportEmail">주소 복사</button>
+        </li>
+      </ul>
     </section>
 
     <transition name="toast-fade">
@@ -466,42 +591,39 @@ const normalizeTimeInput = (entry, field) => {
 body {
   margin: 0;
   font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
-  background: var(--bg);
+  background: #ffffff;
   color: var(--text);
 }
 
 button,
-input,
-select {
+input {
   font: inherit;
 }
 
 main {
-  width: min(1080px, calc(100% - 24px));
+  width: min(1320px, calc(100% - 24px));
   margin: 20px auto 36px;
-  display: grid;
-  gap: 14px;
+  display: block;
+}
+
+.panel + .panel {
+  margin-top: 60px;
 }
 
 .panel {
-  padding: 20px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 1px 1px rgba(9, 9, 11, 0.03);
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .hero {
-  background:
-    linear-gradient(180deg, rgba(9, 9, 11, 0.015), rgba(9, 9, 11, 0)),
-    var(--card);
+  background: transparent;
 }
 
-.hero-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
+.hero + .panel {
+  margin-top: 30px;
 }
 
 .hero-copy {
@@ -512,22 +634,24 @@ main {
 .logo-slot {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 60px;
-  height: 18px;
+  justify-content: flex-start;
+  width: 64px;
+  height: 12px;
   color: var(--text);
+  overflow: visible;
 }
 
 .logo-slot svg {
   width: 100%;
   height: 100%;
+  max-width: 100%;
   display: block;
   fill: currentColor;
+  overflow: visible;
 }
 
 h1,
 h2,
-h3,
 p {
   margin: 0;
 }
@@ -538,9 +662,14 @@ h1 {
   letter-spacing: -0.04em;
 }
 
-.hero p {
-  max-width: 560px;
+.hero p,
+.sub,
+.foot {
   color: var(--muted);
+}
+
+.hero p,
+.sub {
   font-size: 13px;
   line-height: 1.6;
 }
@@ -548,7 +677,7 @@ h1 {
 .head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -558,464 +687,331 @@ h1 {
   letter-spacing: -0.02em;
 }
 
-.sub,
-.foot {
+.result-sub {
+  margin-bottom: 14px;
+}
+
+.table-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.table-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.table-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.table-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
   color: var(--muted);
 }
 
-.sub {
-  margin-top: 4px;
-  font-size: 12px;
-  line-height: 1.5;
+.table-filter span {
+  color: var(--text);
+  white-space: nowrap;
 }
 
-.toolbar {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+.table-filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  white-space: nowrap;
 }
 
-.button {
-  min-height: 40px;
-  padding: 0 14px;
-  border-radius: var(--radius-sm);
-  font-weight: 700;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+.table-filter-label svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.primary {
-  background: var(--text);
-  color: #fff;
-  border: 1px solid var(--text);
-}
-
-.secondary,
-.danger {
-  background: #fff;
+.table-filter select {
+  min-width: 96px;
+  min-height: 30px;
+  padding: 0 28px 0 10px;
   border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text);
+  font: inherit;
 }
 
-.secondary {
+.table-action-button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.table-action-button:hover {
+  background: #f6f6f7;
+}
+
+.import-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.upload-steps {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.upload-steps li + li {
+  margin-top: 2px;
+}
+
+.upload-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.import-field {
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.import-field span {
   color: var(--text);
 }
 
-.danger {
-  color: var(--muted);
+.import-field input,
+.table-input {
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fcfcfd;
+  color: var(--text);
 }
 
-.icon-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
-  padding: 0;
-  line-height: 1;
-}
-
-.icon-button svg {
-  width: 16px;
-  height: 16px;
-}
-
-.reset-button,
-.copy-button {
+.table-input {
   min-height: 34px;
-  padding: 0 10px;
+  padding: 6px 8px;
   font-size: 12px;
+  background: #ffffff;
 }
 
-.copy-button {
-  min-height: 28px;
-  padding: 0 8px;
-  font-size: 11px;
-}
-
-.copy-accent {
-  background: #ffd86b;
-  color: #09090b;
-  border: 1px solid #e5bf4d;
-}
-
-.input-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 18px;
-  align-items: start;
-}
-
-.list {
-  display: grid;
-  gap: 0;
-}
-
-.entry-row {
-  display: block;
-  padding: 12px 0;
-}
-
-.entry-row + .entry-row {
-  border-top: 1px solid var(--line);
-}
-
-.item {
-  padding: 0;
-  background: transparent;
+.table-input.number {
+  appearance: textfield;
+  -moz-appearance: textfield;
   border: none;
-  border-radius: 0;
+  box-shadow: none;
+  text-align: right;
+}
+
+.table-input.number::-webkit-outer-spin-button,
+.table-input.number::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.table-input.number:focus,
+.table-input.number:focus-visible {
+  outline: none;
+  border: none;
   box-shadow: none;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: 1.2fr repeat(3, minmax(0, 1fr)) auto;
-  gap: 10px;
-  align-items: end;
-  width: min(100%, 920px);
-  margin: 0 auto;
-}
-
-.add-row {
-  display: flex;
-  justify-content: center;
-  padding: 12px 0 4px;
-}
-
-.bottom-add-button {
-  border-radius: 999px;
-}
-
-.delete-cell {
-  display: flex;
-  align-items: end;
-  justify-content: flex-end;
-}
-
-.entry-meta,
-.error {
-  grid-column: 1 / -1;
-  min-height: 18px;
-  font-size: 12px;
-}
-
-.entry-meta {
+.import-field small {
   color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.import-status,
+.import-error {
+  margin-top: 10px;
 }
 
 .error {
   color: var(--danger);
+  font-size: 12px;
 }
 
-.empty-state {
-  display: grid;
-  place-items: center;
-  gap: 10px;
-  padding: 28px 20px;
-  border: 1px dashed var(--line);
+.monthly-table-wrap {
+  margin-top: 14px;
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  background: linear-gradient(180deg, #fbfbfb, #f7f7f8);
-  text-align: center;
-}
-
-.empty-state p {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.empty-add-button {
-  width: auto;
-  min-width: 120px;
-}
-
-.summary-panel {
-  position: sticky;
-  top: 20px;
-  display: grid;
-  gap: 10px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, #fcfcfd, #f7f7f8);
-}
-
-.summary-head {
-  display: grid;
-  gap: 4px;
-}
-
-.summary-head h3 {
-  font-size: 15px;
-  letter-spacing: -0.02em;
-}
-
-.summary-head p {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.result-sheet {
-  display: grid;
-  gap: 0;
-  border: 1px solid #191919;
+  overflow-x: auto;
   background: #fff;
 }
 
-.result-sheet-title,
-.result-single-head,
-.result-group,
-.result-four-label div,
-.result-four-value div,
-.result-single-value {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
+.monthly-table {
+  width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+  table-layout: fixed;
 }
 
-.result-sheet-title {
-  min-height: 38px;
-  padding: 8px 12px;
-  border-bottom: 1px solid #191919;
-  background: #ffe38c;
-  font-size: 13px;
+.monthly-table th,
+.monthly-table td {
+  padding: 7px 6px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.monthly-table td {
+  white-space: nowrap;
+}
+
+.monthly-table tbody td {
+  background: #fafafb;
+}
+
+.monthly-table th {
+  background: #f5f5f5;
+  font-weight: 700;
+  white-space: normal;
+  line-height: 1.35;
+  word-break: keep-all;
+}
+
+.monthly-table .group-overtime,
+.monthly-table .group-night,
+.monthly-table .group-holiday,
+.monthly-table .group-total,
+.monthly-table .group-carry,
+.monthly-table .group-issue {
+  background: #f1f1f3;
+}
+
+.monthly-table thead .group-overtime {
+  background: #e8f1fb;
+}
+
+.monthly-table thead .group-overtime-sub {
+  background: #e8f1fb;
+}
+
+.monthly-table thead .group-night {
+  background: #f0ebfb;
+}
+
+.monthly-table thead .group-night-sub {
+  background: #f0ebfb;
+}
+
+.monthly-table thead .group-holiday {
+  background: #fbeaea;
+}
+
+.monthly-table thead .group-holiday-sub {
+  background: #fbeaea;
+}
+
+.monthly-table thead .group-total {
+  background: #eeeeef;
+}
+
+.monthly-table thead .group-carry {
+  background: #f8f1da;
+}
+
+.monthly-table thead .group-result-carry {
+  background: #eaf5ea;
+}
+
+.monthly-table thead .group-issue {
+  background: #eeeeef;
+}
+
+.monthly-table thead .group-highlight {
+  background: #e3f4e5;
+  border-top: 2px solid #7bb57f;
+  border-left: 2px solid #7bb57f;
+  border-right: 2px solid #7bb57f;
+}
+
+.monthly-table .group-overtime-sub,
+.monthly-table .group-night-sub,
+.monthly-table .group-holiday-sub,
+.monthly-table .cell-overtime,
+.monthly-table .cell-night,
+.monthly-table .cell-holiday,
+.monthly-table .cell-issue,
+.monthly-table .cell-total {
+  background: #fafafb;
+}
+
+.monthly-table .cell-carry {
+  background: #fff8e4;
+}
+
+.monthly-table .cell-result-carry {
+  background: #f2faf2;
+}
+
+.monthly-table .cell-highlight {
+  background: #f1fbf2;
+  border-left: 2px solid #7bb57f;
+  border-right: 2px solid #7bb57f;
+}
+
+.monthly-table .cell-edit {
+  background: #ffffff;
+}
+
+.monthly-table .strong {
   font-weight: 700;
 }
 
-.result-sheet-title.with-action {
-  justify-content: space-between;
-  gap: 10px;
+.monthly-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
-.result-four-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.monthly-table tbody tr:last-child .cell-highlight {
+  border-bottom: 2px solid #7bb57f;
 }
 
-.result-group,
-.result-four-label div,
-.result-four-value div,
-.result-single-head,
-.result-single-value {
-  min-height: 48px;
-  padding: 8px;
-  border-right: 1px solid #191919;
-  border-bottom: 1px solid #191919;
-  font-size: 12px;
-}
-
-.result-four-grid > :last-child,
-.result-single-head,
-.result-single-value {
+.monthly-table th:last-child,
+.monthly-table td:last-child {
   border-right: none;
 }
 
-.result-group,
-.result-single-head {
-  background: #f7f7f8;
-  font-weight: 700;
-}
-
-.result-four-label div {
-  min-height: 36px;
-  background: #fff;
-  font-weight: 600;
-}
-
-.result-four-value div,
-.result-single-value {
-  min-height: 44px;
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  color: var(--text);
-}
-
-.result-caption {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.3;
-}
-
-.result-caption.single {
-  grid-template-columns: 1fr;
-}
-
-.result-caption span {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 34px;
-  padding: 8px;
-  border-top: 1px solid #191919;
-  border-right: 1px solid #191919;
-  text-align: center;
-}
-
-.result-caption span:last-child {
-  border-right: none;
-}
-
-label {
-  display: grid;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--muted);
-}
-
-.field {
-  display: grid;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--muted);
-}
-
-label span,
-.field span {
-  color: var(--text);
-}
-
-input,
-select {
-  width: 100%;
-  min-height: 40px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: #fcfcfd;
-  color: var(--text);
-}
-
-.dp__theme_light {
-  --dp-border-color: var(--line);
-  --dp-hover-color: #f5f6f8;
-  --dp-primary-color: #09090b;
-  --dp-primary-disabled-color: #71717a;
-  --dp-border-radius: 8px;
-  --dp-font-size: 0.875rem;
-  --dp-cell-size: 30px;
-  --dp-common-padding: 8px;
-  --dp-menu-padding: 4px 6px;
-  --dp-month-year-row-height: 30px;
-  --dp-month-year-row-button-size: 22px;
-  --dp-button-height: 28px;
-  --dp-button-icon-height: 16px;
-  --dp-calendar-header-cell-padding: 0.25rem;
-  --dp-input-padding: 6px 10px;
-  --dp-menu-min-width: 232px;
-  font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
-}
-
-.dp__input {
-  min-height: 40px;
-  padding: 10px 12px;
-  border-color: var(--line);
-  border-radius: var(--radius-sm);
-  background: #fcfcfd;
-  color: var(--text);
-  font-size: 12px;
-  line-height: 1.2;
-  font-weight: 400;
-  font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
-}
-
-.dp__input_icon,
-.dp__input_icons {
-  display: none !important;
-}
-
-.dp__input_icon_pad,
-.dp__input,
-.dp__input_reg {
-  padding-inline-start: 12px !important;
-  padding-inline-end: 12px !important;
-}
-
-.dp__menu {
-  border-color: var(--line);
-  border-radius: 10px;
-  box-shadow: 0 14px 28px rgba(9, 9, 11, 0.1);
-  font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
-  font-size: 12px;
-}
-
-.dp__calendar_header_item {
-  justify-content: center;
-}
-
-.dp__month_year_wrap,
-.dp__calendar,
-.dp__inner_nav,
-.dp__month_year_select,
-.dp__calendar_header,
-.dp__cell_inner {
-  font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
-}
-
-[data-test-id="clear-input-value-btn"],
-.dp--clear-btn {
-  display: none !important;
-}
-
-[data-test-id="open-time-picker-btn"] {
-  display: none !important;
-}
-
-.calendar-header-label,
-.calendar-day-cell {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-}
-
-.calendar-header-label.saturday,
-.calendar-day-cell.is-saturday {
-  color: #2563eb;
-}
-
-.calendar-header-label.sunday,
-.calendar-day-cell.is-sunday,
-.calendar-day-cell.is-holiday {
-  color: #dc2626;
-}
-
-.calendar-day-cell.is-holiday {
-  font-weight: 700;
-}
-
-.time-text-input {
-  letter-spacing: 0.01em;
-}
-
-.static-field {
-  display: flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 10px 12px;
-  border: 1px solid #dcdce2;
-  border-radius: var(--radius-sm);
-  background: #ececf0;
-  color: var(--muted);
-}
-
-.static-field.inactive {
-  background: #e6e7eb;
-  color: #52525b;
-}
-
-input:focus,
-select:focus,
-.button:focus {
-  outline: 2px solid rgba(24, 24, 27, 0.12);
-  outline-offset: 2px;
+.monthly-table .time-head,
+.monthly-table .cell-time {
+  width: 40px;
+  min-width: 40px;
+  padding-left: 4px;
+  padding-right: 4px;
 }
 
 .guide-table {
@@ -1042,27 +1038,16 @@ select:focus,
   background: var(--soft);
 }
 
-.guide-row strong {
-  font-size: 12px;
-}
-
-.foot {
-  margin-top: 12px;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.report-row {
-  display: flex;
-  justify-content: flex-start;
-  margin-top: 6px;
-}
-
-.report-text {
-  margin: 0;
+.foot-list {
+  margin: 12px 0 0;
+  padding-left: 18px;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.6;
+}
+
+.foot-item + .foot-item {
+  margin-top: 4px;
 }
 
 .report-link {
@@ -1109,7 +1094,6 @@ select:focus,
 .copy-toast p {
   font-size: 13px;
   line-height: 1.5;
-  color: var(--text);
 }
 
 .toast-fade-enter-active,
@@ -1124,59 +1108,34 @@ select:focus,
 }
 
 @media (max-width: 900px) {
-  .hero-head,
+  .import-grid,
   .guide-row {
-    display: grid;
     grid-template-columns: 1fr;
-  }
-
-  .input-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .summary-panel {
-    position: static;
-  }
-
-  .grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .delete-cell {
-    grid-column: span 2;
-    justify-content: flex-end;
   }
 }
 
 @media (max-width: 620px) {
   main {
-    width: min(100% - 16px, 1080px);
+    width: min(100% - 16px, 1320px);
   }
 
   .panel {
     padding: 15px;
   }
 
-  .head,
-  .hero-head {
-    display: flex;
+  .head {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .grid,
-  .toolbar {
-    grid-template-columns: 1fr;
+  .table-actions {
+    flex-wrap: wrap;
   }
 
-  .delete-cell,
-  .entry-meta,
-  .error {
-    grid-column: span 1;
-  }
-
-  .button {
-    width: 100%;
+  .table-toolbar,
+  .table-filters {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 </style>
