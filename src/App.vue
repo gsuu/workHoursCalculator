@@ -1,5 +1,5 @@
 ﻿<script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 
 import { parseMonthlyResultFiles } from "./monthlyAttendanceImport.js";
 import {
@@ -18,9 +18,14 @@ const selectedPart = ref("all");
 const selectedSort = ref("name");
 const copyToastMessage = ref("");
 const copyToastVisible = ref(false);
+const persistenceReady = ref(false);
 
 const HIWORKS_EXPORT_BASE_URL = "https://hr-work-api.office.hiworks.com/v4/excel/export/work-month";
 const HIWORKS_NODE_ID = "12344";
+const MONTHLY_DB_NAME = "work-hours-calculator";
+const MONTHLY_DB_VERSION = 1;
+const MONTHLY_STORE_NAME = "monthly-results";
+const MONTHLY_SNAPSHOT_KEY = "monthly-snapshot";
 
 const now = new Date();
 const latestDownloadDate = new Date(now.getFullYear(), now.getMonth(), 0);
@@ -33,6 +38,56 @@ const selectedDownloadYear = ref(String(defaultDownloadYear));
 const selectedDownloadMonth = ref(String(defaultDownloadMonth));
 
 let copyToastTimer = null;
+
+const openMonthlyDb = async () => {
+  if (typeof window === "undefined" || !("indexedDB" in window)) {
+    return null;
+  }
+
+  return new Promise((resolve, reject) => {
+    const request = window.indexedDB.open(MONTHLY_DB_NAME, MONTHLY_DB_VERSION);
+
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(MONTHLY_STORE_NAME)) {
+        database.createObjectStore(MONTHLY_STORE_NAME);
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("IndexedDB를 열 수 없습니다."));
+  });
+};
+
+const readMonthlySnapshot = async () => {
+  const database = await openMonthlyDb();
+  if (!database) return null;
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(MONTHLY_STORE_NAME, "readonly");
+    const store = transaction.objectStore(MONTHLY_STORE_NAME);
+    const request = store.get(MONTHLY_SNAPSHOT_KEY);
+
+    request.onsuccess = () => resolve(request.result ?? null);
+    request.onerror = () => reject(request.error ?? new Error("저장된 결과를 읽을 수 없습니다."));
+    transaction.oncomplete = () => database.close();
+  });
+};
+
+const writeMonthlySnapshot = async (snapshot) => {
+  const database = await openMonthlyDb();
+  if (!database) return;
+
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction(MONTHLY_STORE_NAME, "readwrite");
+    const store = transaction.objectStore(MONTHLY_STORE_NAME);
+    const request = store.put(snapshot, MONTHLY_SNAPSHOT_KEY);
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error ?? new Error("결과 저장에 실패했습니다."));
+    transaction.oncomplete = () => database.close();
+  });
+};
 
 const formatMonthlyPeriodLabel = (year, month) => `${year}년 ${month}월`;
 
@@ -107,9 +162,9 @@ const copyMonthlyTable = async () => {
     "\uD734\uC77C/\uD734\uBB34\uC77C \uC57C\uAC04\uADFC\uBB34(\uC2DC)",
     "\uD734\uC77C/\uD734\uBB34\uC77C \uC57C\uAC04\uADFC\uBB34(\uBD84)",
     "\uD658\uC0B0\uC2DC\uAC04(h)",
+    "\uC5F0\uC7A5\uADFC\uBB34 \uC77C\uC218",
     "\uC774\uC6D4 \uD734\uAC00(h)",
-    "\uC9C0\uAE09\uD734\uAC00(d)",
-    "\uC5F0\uC7A5\uADFC\uBB34 \uC77C\uC218"
+    "\uC9C0\uAE09\uD734\uAC00(d)"
   ];
   if (showRemarkColumn.value) {
     headers.push("\uBE44\uACE0");
@@ -129,9 +184,9 @@ const copyMonthlyTable = async () => {
     row.holidayNightHoursText,
     row.holidayNightRemainMinutesText,
     row.totalLeaveHoursText,
+    String(row.overtimeDayCount),
     row.carryLeaveHoursText,
     row.grantDaysText,
-    String(row.overtimeDayCount),
     ...(showRemarkColumn.value ? [row.remarkText] : [])
   ].join("\t"));
   try {
@@ -167,9 +222,9 @@ const downloadMonthlyTableCsv = async () => {
     "\uD734\uC77C/\uD734\uBB34\uC77C \uC57C\uAC04\uADFC\uBB34(\uC2DC)",
     "\uD734\uC77C/\uD734\uBB34\uC77C \uC57C\uAC04\uADFC\uBB34(\uBD84)",
     "\uD658\uC0B0\uC2DC\uAC04(h)",
+    "\uC5F0\uC7A5\uADFC\uBB34 \uC77C\uC218",
     "\uC774\uC6D4 \uD734\uAC00(h)",
-    "\uC9C0\uAE09\uD734\uAC00(d)",
-    "\uC5F0\uC7A5\uADFC\uBB34 \uC77C\uC218"
+    "\uC9C0\uAE09\uD734\uAC00(d)"
   ];
   if (showRemarkColumn.value) {
     headers.push("\uBE44\uACE0");
@@ -189,9 +244,9 @@ const downloadMonthlyTableCsv = async () => {
     row.holidayNightHoursText,
     row.holidayNightRemainMinutesText,
     row.totalLeaveHoursText,
+    String(row.overtimeDayCount),
     row.carryLeaveHoursText,
     row.grantDaysText,
-    String(row.overtimeDayCount),
     ...(showRemarkColumn.value ? [row.remarkText] : [])
   ]);
   const csv = [headers, ...rows]
@@ -392,6 +447,37 @@ const updateMonthlyFile = async (type, event) => {
 
   await loadMonthlyWorkers();
 };
+
+onMounted(async () => {
+  try {
+    const snapshot = await readMonthlySnapshot();
+    if (snapshot?.workers?.length) {
+      monthlyWorkers.value = snapshot.workers;
+      monthlyPeriodLabel.value = snapshot.periodLabel || PRELOADED_MONTHLY_PERIOD_LABEL;
+      previousCarryHoursMap.value = snapshot.previousCarryHoursMap || {};
+    }
+  } finally {
+    persistenceReady.value = true;
+  }
+});
+
+watch(
+  [monthlyWorkers, monthlyPeriodLabel, previousCarryHoursMap],
+  async () => {
+    if (!persistenceReady.value) return;
+
+    try {
+      await writeMonthlySnapshot({
+        workers: monthlyWorkers.value,
+        periodLabel: monthlyPeriodLabel.value,
+        previousCarryHoursMap: previousCarryHoursMap.value
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  },
+  { deep: true }
+);
 </script>
 
 <template>
@@ -517,7 +603,7 @@ const updateMonthlyFile = async (type, event) => {
       <div class="head">
         <div>
           <h2>월별 결과 표</h2>
-          <p class="sub result-sub">업로드한 파일을 기준으로 작업자별 환산 결과를 보여줍니다.</p>
+          <p class="sub result-sub">업로드한 파일을 기준으로 작업자별 환산 결과를 보여주며, 현재 결과와 전월 이월 휴가 입력값은 이 브라우저에 자동 저장됩니다.</p>
         </div>
       </div>
       <div class="table-toolbar">
@@ -577,9 +663,9 @@ const updateMonthlyFile = async (type, event) => {
             <col style="width: 40px">
             <col style="width: 40px">
             <col style="width: 74px">
+            <col style="width: 64px">
             <col style="width: 74px">
             <col style="width: 60px">
-            <col style="width: 64px">
             <col v-if="showRemarkColumn" style="width: 116px">
           </colgroup>
           <thead>
@@ -594,9 +680,9 @@ const updateMonthlyFile = async (type, event) => {
               <th colspan="2" class="group-holiday">휴일/휴무일 연장근무</th>
               <th colspan="2" class="group-holiday">휴일/휴무일 야간근무</th>
               <th rowspan="2" class="group-total">환산시간(h)</th>
+              <th rowspan="2" class="group-issue">연장근무 일수</th>
               <th rowspan="2" class="group-result-carry">이월 휴가(h)</th>
               <th rowspan="2" class="group-highlight">지급휴가(d)</th>
-              <th rowspan="2" class="group-issue">연장근무 일수</th>
               <th v-if="showRemarkColumn" rowspan="2" class="group-note">비고</th>
             </tr>
             <tr>
@@ -635,9 +721,9 @@ const updateMonthlyFile = async (type, event) => {
               <td class="cell-holiday cell-time">{{ row.holidayNightHoursText }}</td>
               <td class="cell-holiday cell-time">{{ row.holidayNightRemainMinutesText }}</td>
               <td class="cell-total strong">{{ row.totalLeaveHoursText }}</td>
+              <td class="cell-issue strong">{{ row.overtimeDayCount }}</td>
               <td class="cell-result-carry strong">{{ row.carryLeaveHoursText }}</td>
               <td class="cell-highlight strong">{{ row.grantDaysText }}</td>
-              <td class="cell-issue strong">{{ row.overtimeDayCount }}</td>
               <td v-if="showRemarkColumn" class="cell-note">{{ row.remarkText }}</td>
             </tr>
           </tbody>
