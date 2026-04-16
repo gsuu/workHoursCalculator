@@ -74,6 +74,14 @@ export const inferDefaultEndTime = (start) => {
   return "";
 };
 
+export const inferScheduledStartTimeFromRule = (ruleText) => {
+  const text = normalizeText(ruleText);
+  if (text.includes("8시출근")) return "08:00";
+  if (text.includes("9시출근")) return "09:00";
+  if (text.includes("10시출근")) return "10:00";
+  return "";
+};
+
 export const inferScheduledEndTimeFromRule = (ruleText) => {
   const text = normalizeText(ruleText);
   if (text.includes("8시출근")) return "17:00";
@@ -82,12 +90,91 @@ export const inferScheduledEndTimeFromRule = (ruleText) => {
   return "";
 };
 
+const getScheduledRange = (ruleText) => ({
+  start: inferScheduledStartTimeFromRule(ruleText),
+  end: inferScheduledEndTimeFromRule(ruleText)
+});
+
 const parseDetailDurationMinutes = (value) => {
   const text = normalizeText(value);
   const match = text.match(/^(\d{2}):(\d{2}):(\d{2})$/);
   if (!match) return 0;
 
   return Number(match[1]) * 60 + Number(match[2]);
+};
+
+const getApprovedMinutes = ({
+  approvedOvertimeMinutes = 0,
+  approvedNightMinutes = 0,
+  approvedHolidayMinutes = 0
+}) => approvedOvertimeMinutes + approvedNightMinutes + approvedHolidayMinutes;
+
+export const shouldUseScheduledRangeForUnapprovedRecord = ({
+  start,
+  end,
+  ruleText,
+  approvedOvertimeMinutes = 0,
+  approvedNightMinutes = 0,
+  approvedHolidayMinutes = 0
+}) => {
+  const approvedMinutes = getApprovedMinutes({
+    approvedOvertimeMinutes,
+    approvedNightMinutes,
+    approvedHolidayMinutes
+  });
+
+  if (approvedMinutes > 0) {
+    return false;
+  }
+
+  const scheduledRange = getScheduledRange(ruleText);
+  if (!scheduledRange.start || !scheduledRange.end) {
+    return false;
+  }
+
+  const startMinutes = toTimeMinutes(start);
+  const endMinutes = toTimeMinutes(end);
+  const scheduledEndMinutes = toTimeMinutes(scheduledRange.end);
+  if (startMinutes == null || endMinutes == null || scheduledEndMinutes == null) {
+    return false;
+  }
+
+  if (start === "00:00" && end === "00:00") {
+    return true;
+  }
+
+  if (startMinutes === endMinutes) {
+    return true;
+  }
+
+  return startMinutes >= scheduledEndMinutes;
+};
+
+export const resolveRecordedStartTime = ({
+  start,
+  ruleText,
+  approvedOvertimeMinutes = 0,
+  approvedNightMinutes = 0,
+  approvedHolidayMinutes = 0
+}) => {
+  const scheduledStart = inferScheduledStartTimeFromRule(ruleText);
+  const approvedMinutes = getApprovedMinutes({
+    approvedOvertimeMinutes,
+    approvedNightMinutes,
+    approvedHolidayMinutes
+  });
+
+  if (!scheduledStart || approvedMinutes > 0) {
+    return start;
+  }
+
+  const startMinutes = toTimeMinutes(start);
+  const scheduledStartMinutes = toTimeMinutes(scheduledStart);
+  if (startMinutes == null || scheduledStartMinutes == null) {
+    return start;
+  }
+
+  return startMinutes < scheduledStartMinutes ? scheduledStart : start;
 };
 
 export const resolveRecordedEndTime = ({
@@ -99,7 +186,11 @@ export const resolveRecordedEndTime = ({
   approvedHolidayMinutes = 0
 }) => {
   const scheduledEnd = inferScheduledEndTimeFromRule(ruleText);
-  const approvedMinutes = approvedOvertimeMinutes + approvedNightMinutes + approvedHolidayMinutes;
+  const approvedMinutes = getApprovedMinutes({
+    approvedOvertimeMinutes,
+    approvedNightMinutes,
+    approvedHolidayMinutes
+  });
 
   if (!end) {
     return scheduledEnd || inferDefaultEndTime(start);
@@ -116,6 +207,40 @@ export const resolveRecordedEndTime = ({
   }
 
   return endMinutes > scheduledEndMinutes ? scheduledEnd : end;
+};
+
+export const isUnapprovedRangeInvalid = ({
+  start,
+  end,
+  ruleText,
+  approvedOvertimeMinutes = 0,
+  approvedNightMinutes = 0,
+  approvedHolidayMinutes = 0
+}) => {
+  const approvedMinutes = getApprovedMinutes({
+    approvedOvertimeMinutes,
+    approvedNightMinutes,
+    approvedHolidayMinutes
+  });
+
+  if (approvedMinutes > 0) {
+    return false;
+  }
+
+  const scheduledRange = getScheduledRange(ruleText);
+  const scheduledStart = scheduledRange.start;
+  const scheduledEnd = scheduledRange.end;
+  if (!scheduledStart || !scheduledEnd) {
+    return false;
+  }
+
+  const startMinutes = toTimeMinutes(start);
+  const endMinutes = toTimeMinutes(end);
+  if (startMinutes == null || endMinutes == null) {
+    return false;
+  }
+
+  return endMinutes <= startMinutes;
 };
 
 export const hasApprovedOvertime = (detail) =>
@@ -250,8 +375,15 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
     const detail = detailRules.get(`${record.employeeId}:${record.date}`) ?? null;
     const ruleText = detail?.ruleText ?? "";
     const workModeOverride = resolveWorkModeOverride(record.date, ruleText);
-    const end = resolveRecordedEndTime({
+    let start = resolveRecordedStartTime({
       start: record.start,
+      ruleText,
+      approvedOvertimeMinutes: detail?.overtimeMinutes ?? 0,
+      approvedNightMinutes: detail?.nightMinutes ?? 0,
+      approvedHolidayMinutes: detail?.holidayMinutes ?? 0
+    });
+    let end = resolveRecordedEndTime({
+      start,
       end: record.end,
       ruleText,
       approvedOvertimeMinutes: detail?.overtimeMinutes ?? 0,
@@ -277,7 +409,37 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
       issueCount: 0
     };
 
-    if (!record.start || !end) {
+    if (!start || !end) {
+      current.issueCount += 1;
+      workerMap.set(record.employeeId, current);
+      continue;
+    }
+
+    if (
+      shouldUseScheduledRangeForUnapprovedRecord({
+        start,
+        end,
+        ruleText,
+        approvedOvertimeMinutes: detail?.overtimeMinutes ?? 0,
+        approvedNightMinutes: detail?.nightMinutes ?? 0,
+        approvedHolidayMinutes: detail?.holidayMinutes ?? 0
+      })
+    ) {
+      const scheduledRange = getScheduledRange(ruleText);
+      start = scheduledRange.start;
+      end = scheduledRange.end;
+    }
+
+    if (
+      isUnapprovedRangeInvalid({
+        start,
+        end,
+        ruleText,
+        approvedOvertimeMinutes: detail?.overtimeMinutes ?? 0,
+        approvedNightMinutes: detail?.nightMinutes ?? 0,
+        approvedHolidayMinutes: detail?.holidayMinutes ?? 0
+      })
+    ) {
       current.issueCount += 1;
       workerMap.set(record.employeeId, current);
       continue;
@@ -285,7 +447,7 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
 
     const result = calculateEntry({
       date: record.date,
-      start: record.start,
+      start,
       end,
       workModeOverride
     });
