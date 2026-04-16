@@ -2,14 +2,17 @@
 import { computed, ref, watch } from "vue";
 
 import { parseMonthlyResultFiles } from "./monthlyAttendanceImport.js";
-import { PRELOADED_MONTHLY_WORKERS } from "./preloadedMonthlyWorkers.js";
+import {
+  PRELOADED_MONTHLY_PERIOD_LABEL,
+  PRELOADED_MONTHLY_WORKERS
+} from "./preloadedMonthlyWorkers.js";
 
 const attendanceImportFile = ref(null);
 const detailImportFile = ref(null);
 const monthlyImportLoading = ref(false);
 const monthlyImportError = ref("");
 const monthlyWorkers = ref(PRELOADED_MONTHLY_WORKERS);
-const monthlyPeriodLabel = ref("2026년 3월");
+const monthlyPeriodLabel = ref(PRELOADED_MONTHLY_PERIOD_LABEL);
 const previousCarryHoursMap = ref({});
 const selectedPart = ref("all");
 const selectedSort = ref("name");

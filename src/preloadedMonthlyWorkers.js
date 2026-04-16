@@ -1,3 +1,5 @@
+export const PRELOADED_MONTHLY_PERIOD_LABEL = "2026년 3월";
+
 export const PRELOADED_MONTHLY_WORKERS = [
   {
     "employeeId": "CT21120020",
