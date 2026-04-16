@@ -1,20 +1,54 @@
 ﻿<script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 
 import { parseMonthlyResultFiles } from "./monthlyAttendanceImport.js";
+import { PRELOADED_MONTHLY_WORKERS } from "./preloadedMonthlyWorkers.js";
 
 const attendanceImportFile = ref(null);
 const detailImportFile = ref(null);
 const monthlyImportLoading = ref(false);
 const monthlyImportError = ref("");
-const monthlyWorkers = ref([]);
+const monthlyWorkers = ref(PRELOADED_MONTHLY_WORKERS);
+const monthlyPeriodLabel = ref("2026년 3월");
 const previousCarryHoursMap = ref({});
 const selectedPart = ref("all");
 const selectedSort = ref("name");
 const copyToastMessage = ref("");
 const copyToastVisible = ref(false);
 
+const HIWORKS_EXPORT_BASE_URL = "https://hr-work-api.office.hiworks.com/v4/excel/export/work-month";
+const HIWORKS_NODE_ID = "12344";
+
+const now = new Date();
+const latestDownloadDate = new Date(now.getFullYear(), now.getMonth(), 0);
+const latestDownloadYear = latestDownloadDate.getFullYear();
+const latestDownloadMonth = latestDownloadDate.getMonth() + 1;
+const defaultDownloadYear = latestDownloadYear;
+const defaultDownloadMonth = latestDownloadMonth;
+
+const selectedDownloadYear = ref(String(defaultDownloadYear));
+const selectedDownloadMonth = ref(String(defaultDownloadMonth));
+
 let copyToastTimer = null;
+
+const formatMonthlyPeriodLabel = (year, month) => `${year}년 ${month}월`;
+
+const downloadYearOptions = computed(() =>
+  Array.from({ length: 3 }, (_, index) => String(latestDownloadYear - 2 + index))
+);
+
+const downloadMonthOptions = computed(() => {
+  const selectedYear = Number(selectedDownloadYear.value);
+  const maxMonth = selectedYear === latestDownloadYear ? latestDownloadMonth : 12;
+  return Array.from({ length: maxMonth }, (_, index) => String(index + 1));
+});
+
+watch(selectedDownloadYear, () => {
+  const maxMonth = Number(downloadMonthOptions.value.at(-1) || defaultDownloadMonth);
+  if (Number(selectedDownloadMonth.value) > maxMonth) {
+    selectedDownloadMonth.value = String(maxMonth);
+  }
+});
 
 const openCopyToast = (message) => {
   if (copyToastTimer) {
@@ -27,6 +61,21 @@ const openCopyToast = (message) => {
     copyToastVisible.value = false;
     copyToastTimer = null;
   }, 2600);
+};
+
+const buildHiworksExportUrl = (type) =>
+  `${HIWORKS_EXPORT_BASE_URL}?filter[year]=${selectedDownloadYear.value}&filter[month]=${selectedDownloadMonth.value}&filter[node_id]=${HIWORKS_NODE_ID}&filter[type]=${type}`;
+
+const openExternalPage = (url) => {
+  window.open(url, "_blank", "noopener,noreferrer");
+};
+
+const openAttendanceExport = () => {
+  openExternalPage(buildHiworksExportUrl("work"));
+};
+
+const openDetailExport = () => {
+  openExternalPage(buildHiworksExportUrl("detail"));
 };
 
 const copyReportEmail = async () => {
@@ -63,7 +112,7 @@ const copyMonthlyTable = async () => {
     headers.push("\uBE44\uACE0");
   }
   const lines = filteredMonthlyRows.value.map((row) => [
-    "\u0033\uC6D4",
+    monthlyPeriodLabel.value,
     String(row.number),
     row.part,
     row.name,
@@ -123,7 +172,7 @@ const downloadMonthlyTableCsv = async () => {
     headers.push("\uBE44\uACE0");
   }
   const rows = filteredMonthlyRows.value.map((row) => [
-    "\u0033\uC6D4",
+    monthlyPeriodLabel.value,
     String(row.number),
     row.part,
     row.name,
@@ -152,7 +201,7 @@ const downloadMonthlyTableCsv = async () => {
     link.href = url;
     link.download = selectedPart.value === "all"
       ? "\uC6D4\uBCC4\uACB0\uACFC\uD45C.csv"
-      : \uC6D4\uBCC4\uACB0\uACFC\uD45C_.csv;
+      : `\uC6D4\uBCC4\uACB0\uACFC\uD45C_${selectedPart.value}.csv`;
     document.body.append(link);
     link.click();
     link.remove();
@@ -185,6 +234,17 @@ const toFixedText = (value, digits = 2) => Number(value || 0).toFixed(digits);
 const toPaddedText = (value) => String(Math.max(0, Math.trunc(value))).padStart(2, "0");
 const toHalfDayFloor = (hours) => Math.floor(Math.max(0, hours) * 2 / 8) / 2;
 const getGrantedLeaveHours = (grantDays) => grantDays * 8;
+const formatIssueDates = (issueDates) => {
+  if (!Array.isArray(issueDates) || issueDates.length === 0) return "";
+
+  return issueDates
+    .map((date) => {
+      const match = String(date).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!match) return String(date);
+      return `${Number(match[2])}/${Number(match[3])}`;
+    })
+    .join(", ");
+};
 
 const partOptions = computed(() => {
   const parts = [...new Set(monthlyWorkers.value.map((worker) => worker.part).filter(Boolean))]
@@ -224,7 +284,10 @@ const monthlyRows = computed(() =>
       totalLeaveHoursText: toFixedText(totalLeaveHours, 2),
       carryLeaveHoursText: toFixedText(carryLeaveHours, 2),
       grantDaysText: Number.isInteger(grantDays) ? String(grantDays) : grantDays.toFixed(1),
-      remarkText: worker.issueCount > 0 ? `수기 확인 필요 (${worker.issueCount}일)` : ""
+      remarkText:
+        worker.issueCount > 0
+          ? `수기 확인 필요 (${formatIssueDates(worker.issueDates) || `${worker.issueCount}일`})`
+          : ""
     };
   })
 );
@@ -298,6 +361,9 @@ const loadMonthlyWorkers = async () => {
       detailFile: detailImportFile.value
     });
     monthlyWorkers.value = parsed.workers;
+    if (parsed.monthInfo?.year && parsed.monthInfo?.month) {
+      monthlyPeriodLabel.value = formatMonthlyPeriodLabel(parsed.monthInfo.year, parsed.monthInfo.month);
+    }
     selectedPart.value = "all";
     selectedSort.value = "name";
   } catch (error) {
@@ -366,22 +432,78 @@ const updateMonthlyFile = async (type, event) => {
               <li><b>근무결과(상세), 근무현황</b> 파일을 다운로드</li>
               <li>업로드</li>
             </ol>
-            <p class="upload-note">* 두 파일은 같은 월의 파일이어야 합니다.</p>
+            <div class="upload-note">
+              <p>* 두 파일은 같은 월의 파일이어야 합니다.</p>
+              <p>* 아래에서 바로 다운로드도 가능합니다.</p>
+            </div>
           </div>
         </div>
 
-      <div class="import-grid">
-        <label class="import-field">
-          <span>근태현황 파일</span>
-          <input type="file" accept=".xls,.xlsx" @change="updateMonthlyFile('attendance', $event)">
-          <small>{{ attendanceImportFile?.name ?? "선택된 파일이 없습니다." }}</small>
-        </label>
+      <div class="transfer-shell">
+        <div class="transfer-rail">
+          <section class="transfer-column transfer-column-download">
+            <p class="transfer-kicker">파일 다운로드</p>
+            <label class="transfer-month">
+              <span>대상 월</span>
+              <div class="transfer-month-controls">
+                <select v-model="selectedDownloadYear">
+                  <option
+                    v-for="year in downloadYearOptions"
+                    :key="year"
+                    :value="year"
+                  >
+                    {{ year }}년
+                  </option>
+                </select>
+                <select v-model="selectedDownloadMonth">
+                  <option
+                    v-for="month in downloadMonthOptions"
+                    :key="month"
+                    :value="month"
+                  >
+                    {{ month }}월
+                  </option>
+                </select>
+              </div>
+            </label>
+            <div class="transfer-button-row">
+              <button class="download-action-button" type="button" @click="openAttendanceExport">
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M8 2.5v7m0 0 2.5-2.5M8 9.5 5.5 7M3 11.5h10v2H3z" />
+                </svg>
+                <span>근무현황 다운로드</span>
+              </button>
+              <button class="download-action-button" type="button" @click="openDetailExport">
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M8 2.5v7m0 0 2.5-2.5M8 9.5 5.5 7M3 11.5h10v2H3z" />
+                </svg>
+                <span>근무결과(상세) 다운로드</span>
+              </button>
+            </div>
+          </section>
 
-        <label class="import-field">
-          <span>근무결과(상세) 파일</span>
-          <input type="file" accept=".xls,.xlsx" @change="updateMonthlyFile('detail', $event)">
-          <small>{{ detailImportFile?.name ?? "선택된 파일이 없습니다." }}</small>
-        </label>
+          <div class="transfer-divider" aria-hidden="true"></div>
+
+          <section class="transfer-column transfer-column-upload">
+            <div class="transfer-upload-head">
+              <p class="transfer-kicker">파일 업로드</p>
+              <p class="transfer-copy">로컬에 저장된 동일 형식 파일을 바로 업로드할 수 있습니다.</p>
+            </div>
+            <div class="transfer-upload-list">
+              <label class="transfer-upload-row">
+                <span class="transfer-upload-label">근태현황 파일</span>
+                <input class="transfer-upload-input" type="file" accept=".xls,.xlsx" @change="updateMonthlyFile('attendance', $event)">
+                <small>{{ attendanceImportFile?.name ?? "선택된 파일이 없습니다." }}</small>
+              </label>
+
+              <label class="transfer-upload-row">
+                <span class="transfer-upload-label">근무결과(상세) 파일</span>
+                <input class="transfer-upload-input" type="file" accept=".xls,.xlsx" @change="updateMonthlyFile('detail', $event)">
+                <small>{{ detailImportFile?.name ?? "선택된 파일이 없습니다." }}</small>
+              </label>
+            </div>
+          </section>
+        </div>
       </div>
 
       <p v-if="monthlyImportLoading" class="sub import-status">파일을 읽고 월별 결과를 계산하는 중입니다.</p>
@@ -438,7 +560,7 @@ const updateMonthlyFile = async (type, event) => {
       <div class="monthly-table-wrap">
         <table class="monthly-table">
           <colgroup>
-            <col style="width: 42px">
+            <col style="width: 78px">
             <col style="width: 38px">
             <col style="width: 64px">
             <col style="width: 82px">
@@ -487,9 +609,9 @@ const updateMonthlyFile = async (type, event) => {
           </thead>
           <tbody>
             <tr v-for="row in filteredMonthlyRows" :key="row.employeeId">
-              <td>3월</td>
+              <td class="cell-month">{{ monthlyPeriodLabel }}</td>
               <td>{{ row.number }}</td>
-              <td>{{ row.part }}</td>
+              <td class="cell-part">{{ row.part }}</td>
               <td>{{ row.name }}</td>
               <td class="cell-edit">
                 <input
@@ -758,6 +880,10 @@ h1 {
   font: inherit;
 }
 
+.cell-month {
+  white-space: nowrap;
+}
+
 .table-action-button {
   flex: 0 0 auto;
   min-height: 30px;
@@ -776,10 +902,123 @@ h1 {
   background: #f6f6f7;
 }
 
-.import-grid {
+.transfer-shell {
+  padding: 18px 20px;
+  border: 1px solid #ececf1;
+  border-radius: 16px;
+  background: #fbfbfc;
+}
+
+.transfer-rail {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 0.95fr) auto minmax(0, 1.35fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.transfer-column {
+  display: grid;
   gap: 12px;
+  align-content: start;
+}
+
+.transfer-divider {
+  width: 1px;
+  align-self: stretch;
+  background: #ececf1;
+}
+
+.transfer-kicker {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.transfer-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.transfer-month {
+  display: grid;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.transfer-month span {
+  color: var(--text);
+}
+
+.transfer-month-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.transfer-month-controls select {
+  min-width: 82px;
+  min-height: 34px;
+  padding: 0 30px 0 12px;
+  border: 1px solid #d9dbe2;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text);
+  font: inherit;
+}
+
+.transfer-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.download-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid #d9dbe2;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.download-action-button:hover {
+  background: #f4f5f7;
+}
+
+.download-action-button svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: 0 0 auto;
+}
+
+.transfer-upload-head {
+  display: grid;
+  gap: 5px;
+}
+
+.transfer-upload-list {
+  display: grid;
+  gap: 10px;
 }
 
 .upload-steps {
@@ -801,27 +1040,60 @@ h1 {
   line-height: 1.6;
 }
 
-.import-field {
+.transfer-upload-row {
   display: grid;
-  gap: 6px;
+  grid-template-columns: 116px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 12px;
   font-size: 11px;
   font-weight: 700;
   color: var(--muted);
 }
 
-.import-field span {
+.transfer-upload-label {
   color: var(--text);
 }
 
-.import-field input,
+.transfer-upload-row small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.transfer-upload-input,
 .table-input {
   width: 100%;
   min-height: 40px;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: #fcfcfd;
+  background: #ffffff;
   color: var(--text);
+}
+
+.transfer-upload-input::file-selector-button {
+  margin-right: 10px;
+  padding: 7px 10px;
+  border: 1px solid #d9dbe2;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.transfer-upload-input::-webkit-file-upload-button {
+  margin-right: 10px;
+  padding: 7px 10px;
+  border: 1px solid #d9dbe2;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .table-input {
@@ -850,12 +1122,6 @@ h1 {
   outline: none;
   border: none;
   box-shadow: none;
-}
-
-.import-field small {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.4;
 }
 
 .import-status,
@@ -895,6 +1161,12 @@ h1 {
 
 .monthly-table td {
   white-space: nowrap;
+}
+
+.monthly-table .cell-part {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.4;
 }
 
 .monthly-table tbody td {
@@ -1126,9 +1398,28 @@ h1 {
 }
 
 @media (max-width: 900px) {
-  .import-grid,
   .guide-row {
     grid-template-columns: 1fr;
+  }
+
+  .transfer-shell {
+    padding: 16px;
+  }
+
+  .transfer-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .transfer-divider {
+    display: none;
+  }
+
+  .transfer-upload-row {
+    grid-template-columns: 1fr;
+  }
+
+  .transfer-upload-row small {
+    grid-column: auto;
   }
 }
 
@@ -1154,6 +1445,28 @@ h1 {
   .table-filters {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .transfer-rail {
+    gap: 16px;
+  }
+
+  .transfer-shell {
+    padding: 14px;
+  }
+
+  .transfer-month-controls,
+  .transfer-button-row,
+  .transfer-upload-row {
+    width: 100%;
+  }
+
+  .download-action-button {
+    width: 100%;
+  }
+
+  .download-actions {
+    justify-content: flex-start;
   }
 }
 </style>

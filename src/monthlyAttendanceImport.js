@@ -376,6 +376,14 @@ const formatMinutesLabel = (minutes) => {
 };
 
 const floorToHalfHour = (minutes) => Math.floor(Math.max(0, minutes) / 30) * 30;
+const appendIssueDate = (worker, date) => {
+  if (!date) return;
+  const issueDates = worker.issueDates ?? [];
+  if (!issueDates.includes(date)) {
+    issueDates.push(date);
+  }
+  worker.issueDates = issueDates;
+};
 
 export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) => {
   if (!attendanceFile || !detailFile) {
@@ -426,7 +434,8 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
       holidayGrantMinutes: 0,
       leaveGrantMinutes: 0,
       overtimeDayCount: 0,
-      issueCount: 0
+      issueCount: 0,
+      issueDates: []
     };
 
     if (
@@ -444,6 +453,7 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
 
     if (!start || !end) {
       current.issueCount += 1;
+      appendIssueDate(current, record.date);
       workerMap.set(record.employeeId, current);
       continue;
     }
@@ -474,6 +484,7 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
       })
     ) {
       current.issueCount += 1;
+      appendIssueDate(current, record.date);
       workerMap.set(record.employeeId, current);
       continue;
     }
@@ -487,6 +498,7 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
 
     if (result.error) {
       current.issueCount += 1;
+      appendIssueDate(current, record.date);
       workerMap.set(record.employeeId, current);
       continue;
     }
@@ -524,6 +536,7 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
 
   return {
     workers,
+    monthInfo: attendance.monthInfo,
     processedCount: workers.length,
     sourceCount: attendance.records.size
   };
