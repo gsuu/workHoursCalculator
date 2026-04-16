@@ -1326,9 +1326,6 @@ h1 {
 
 .monthly-table thead .group-highlight {
   background: #e3f4e5;
-  border-top: 2px solid #7bb57f;
-  border-left: 2px solid #7bb57f;
-  border-right: 2px solid #7bb57f;
 }
 
 .monthly-table .group-overtime-sub,
@@ -1360,8 +1357,6 @@ h1 {
 
 .monthly-table .cell-highlight {
   background: #f1fbf2;
-  border-left: 2px solid #7bb57f;
-  border-right: 2px solid #7bb57f;
 }
 
 .monthly-table .cell-edit {
@@ -1377,12 +1372,44 @@ h1 {
 }
 
 .monthly-table tbody tr:last-child .cell-highlight {
-  border-bottom: 2px solid #7bb57f;
+  border-bottom: none;
 }
 
 .monthly-table th:last-child,
 .monthly-table td:last-child {
   border-right: none;
+}
+
+.monthly-table .group-highlight,
+.monthly-table .cell-highlight {
+  position: relative;
+}
+
+.monthly-table .group-highlight::before,
+.monthly-table .cell-highlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.monthly-table .group-highlight::before {
+  border-top: 2px solid #7bb57f;
+  border-left: 2px solid #7bb57f;
+  border-right: 2px solid #7bb57f;
+  border-radius: 10px 10px 0 0;
+}
+
+.monthly-table .cell-highlight::before {
+  border-left: 2px solid #7bb57f;
+  border-right: 2px solid #7bb57f;
+}
+
+.monthly-table tbody tr:last-child .cell-highlight::before {
+  border-bottom: 2px solid #7bb57f;
+  border-radius: 0 0 10px 10px;
 }
 
 .monthly-table .time-head,
