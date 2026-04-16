@@ -109,6 +109,26 @@ const getApprovedMinutes = ({
   approvedHolidayMinutes = 0
 }) => approvedOvertimeMinutes + approvedNightMinutes + approvedHolidayMinutes;
 
+export const shouldIgnoreUnapprovedRecord = ({
+  start,
+  end,
+  approvedOvertimeMinutes = 0,
+  approvedNightMinutes = 0,
+  approvedHolidayMinutes = 0
+}) => {
+  const approvedMinutes = getApprovedMinutes({
+    approvedOvertimeMinutes,
+    approvedNightMinutes,
+    approvedHolidayMinutes
+  });
+
+  if (approvedMinutes > 0) {
+    return false;
+  }
+
+  return start === "00:00" && end === "00:00";
+};
+
 export const shouldUseScheduledRangeForUnapprovedRecord = ({
   start,
   end,
@@ -408,6 +428,19 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
       overtimeDayCount: 0,
       issueCount: 0
     };
+
+    if (
+      shouldIgnoreUnapprovedRecord({
+        start: record.start,
+        end: record.end,
+        approvedOvertimeMinutes: detail?.overtimeMinutes ?? 0,
+        approvedNightMinutes: detail?.nightMinutes ?? 0,
+        approvedHolidayMinutes: detail?.holidayMinutes ?? 0
+      })
+    ) {
+      workerMap.set(record.employeeId, current);
+      continue;
+    }
 
     if (!start || !end) {
       current.issueCount += 1;

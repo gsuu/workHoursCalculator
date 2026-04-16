@@ -7,6 +7,7 @@ import {
   inferScheduledEndTimeFromRule,
   inferScheduledStartTimeFromRule,
   isUnapprovedRangeInvalid,
+  shouldIgnoreUnapprovedRecord,
   shouldUseScheduledRangeForUnapprovedRecord,
   resolveRecordedEndTime,
   resolveRecordedStartTime
@@ -141,6 +142,30 @@ test("정시 출퇴근으로 보정되면 더 이상 이상치가 아니다", ()
       end: "18:00",
       ruleText: "9시출근",
       approvedOvertimeMinutes: 0,
+      approvedNightMinutes: 0,
+      approvedHolidayMinutes: 0
+    }),
+    false
+  );
+});
+
+test("승인값이 없는 00:00 ~ 00:00 기록은 계산에서 제외한다", () => {
+  assert.equal(
+    shouldIgnoreUnapprovedRecord({
+      start: "00:00",
+      end: "00:00",
+      approvedOvertimeMinutes: 0,
+      approvedNightMinutes: 0,
+      approvedHolidayMinutes: 0
+    }),
+    true
+  );
+
+  assert.equal(
+    shouldIgnoreUnapprovedRecord({
+      start: "00:00",
+      end: "00:00",
+      approvedOvertimeMinutes: 30,
       approvedNightMinutes: 0,
       approvedHolidayMinutes: 0
     }),

@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, ref } from "vue";
 
 import { parseMonthlyResultFiles } from "./monthlyAttendanceImport.js";
@@ -40,29 +40,28 @@ const copyReportEmail = async () => {
 
 const copyMonthlyTable = async () => {
   if (!filteredMonthlyRows.value.length) return;
-
   const headers = [
-    "월별",
-    "번호",
+    "\uC6D4\uBCC4",
+    "\uBC88\uD638",
     "Part",
-    "팀원명",
-    "전월 이월 휴가(h)",
-    "평일 연장근무(시)",
-    "평일 연장근무(분)",
-    "평일 야간근무(시)",
-    "평일 야간근무(분)",
-    "휴일/휴무일 연장근무(시)",
-    "휴일/휴무일 연장근무(분)",
-    "휴일/휴무일 야간근무(시)",
-    "휴일/휴무일 야간근무(분)",
-    "환산시간(h)",
-    "이월 휴가(h)",
-    "지급휴가(d)",
-    "연장근무 일수"
+    "\uD300\uC6D0\uBA85",
+    "\uC804\uC6D4 \uC774\uC6D4 \uD734\uAC00(h)",
+    "\uD3C9\uC77C \uC5F0\uC7A5\uADFC\uBB34(\uC2DC)",
+    "\uD3C9\uC77C \uC5F0\uC7A5\uADFC\uBB34(\uBD84)",
+    "\uD3C9\uC77C \uC57C\uAC04\uADFC\uBB34(\uC2DC)",
+    "\uD3C9\uC77C \uC57C\uAC04\uADFC\uBB34(\uBD84)",
+    "\uD734\uC77C/\uD734\uBB34\uC77C \uC5F0\uC7A5\uADFC\uBB34(\uC2DC)",
+    "\uD734\uC77C/\uD734\uBB34\uC77C \uC5F0\uC7A5\uADFC\uBB34(\uBD84)",
+    "\uD734\uC77C/\uD734\uBB34\uC77C \uC57C\uAC04\uADFC\uBB34(\uC2DC)",
+    "\uD734\uC77C/\uD734\uBB34\uC77C \uC57C\uAC04\uADFC\uBB34(\uBD84)",
+    "\uD658\uC0B0\uC2DC\uAC04(h)",
+    "\uC774\uC6D4 \uD734\uAC00(h)",
+    "\uC9C0\uAE09\uD734\uAC00(d)",
+    "\uC5F0\uC7A5\uADFC\uBB34 \uC77C\uC218",
+    "\uBE44\uACE0"
   ];
-
   const lines = filteredMonthlyRows.value.map((row) => [
-    "3월",
+    "\u0033\uC6D4",
     String(row.number),
     row.part,
     row.name,
@@ -78,14 +77,14 @@ const copyMonthlyTable = async () => {
     row.totalLeaveHoursText,
     row.carryLeaveHoursText,
     row.grantDaysText,
-    String(row.overtimeDayCount)
+    String(row.overtimeDayCount),
+    row.remarkText
   ].join("\t"));
-
   try {
     await navigator.clipboard.writeText([headers.join("\t"), ...lines].join("\n"));
-    openCopyToast("월별 결과 표가 복사되었습니다. 엑셀에 바로 붙여넣기 하세요.");
+    openCopyToast("\uC6D4\uBCC4 \uACB0\uACFC \uD45C\uAC00 \uBCF5\uC0AC\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC5D1\uC140\uC5D0 \uBC14\uB85C \uBD99\uC5EC\uB123\uAE30 \uD558\uC138\uC694.");
   } catch {
-    openCopyToast("결과 표 복사에 실패했습니다. 다시 시도해 주세요.");
+    openCopyToast("\uACB0\uACFC \uD45C \uBCF5\uC0AC\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.");
   }
 };
 
@@ -99,29 +98,28 @@ const escapeCsvCell = (value) => {
 
 const downloadMonthlyTableCsv = async () => {
   if (!filteredMonthlyRows.value.length) return;
-
   const headers = [
-    "월별",
-    "번호",
+    "\uC6D4\uBCC4",
+    "\uBC88\uD638",
     "Part",
-    "팀원명",
-    "전월 이월 휴가(h)",
-    "평일 연장근무(시)",
-    "평일 연장근무(분)",
-    "평일 야간근무(시)",
-    "평일 야간근무(분)",
-    "휴일/휴무일 연장근무(시)",
-    "휴일/휴무일 연장근무(분)",
-    "휴일/휴무일 야간근무(시)",
-    "휴일/휴무일 야간근무(분)",
-    "환산시간(h)",
-    "이월 휴가(h)",
-    "지급휴가(d)",
-    "연장근무 일수"
+    "\uD300\uC6D0\uBA85",
+    "\uC804\uC6D4 \uC774\uC6D4 \uD734\uAC00(h)",
+    "\uD3C9\uC77C \uC5F0\uC7A5\uADFC\uBB34(\uC2DC)",
+    "\uD3C9\uC77C \uC5F0\uC7A5\uADFC\uBB34(\uBD84)",
+    "\uD3C9\uC77C \uC57C\uAC04\uADFC\uBB34(\uC2DC)",
+    "\uD3C9\uC77C \uC57C\uAC04\uADFC\uBB34(\uBD84)",
+    "\uD734\uC77C/\uD734\uBB34\uC77C \uC5F0\uC7A5\uADFC\uBB34(\uC2DC)",
+    "\uD734\uC77C/\uD734\uBB34\uC77C \uC5F0\uC7A5\uADFC\uBB34(\uBD84)",
+    "\uD734\uC77C/\uD734\uBB34\uC77C \uC57C\uAC04\uADFC\uBB34(\uC2DC)",
+    "\uD734\uC77C/\uD734\uBB34\uC77C \uC57C\uAC04\uADFC\uBB34(\uBD84)",
+    "\uD658\uC0B0\uC2DC\uAC04(h)",
+    "\uC774\uC6D4 \uD734\uAC00(h)",
+    "\uC9C0\uAE09\uD734\uAC00(d)",
+    "\uC5F0\uC7A5\uADFC\uBB34 \uC77C\uC218",
+    "\uBE44\uACE0"
   ];
-
   const rows = filteredMonthlyRows.value.map((row) => [
-    "3월",
+    "\u0033\uC6D4",
     String(row.number),
     row.part,
     row.name,
@@ -137,28 +135,26 @@ const downloadMonthlyTableCsv = async () => {
     row.totalLeaveHoursText,
     row.carryLeaveHoursText,
     row.grantDaysText,
-    String(row.overtimeDayCount)
+    String(row.overtimeDayCount),
+    row.remarkText
   ]);
-
   const csv = [headers, ...rows]
     .map((line) => line.map(escapeCsvCell).join(","))
     .join("\r\n");
-
   const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
-
   try {
     link.href = url;
     link.download = selectedPart.value === "all"
-      ? "월별결과표.csv"
-      : `월별결과표_${selectedPart.value}.csv`;
+      ? "\uC6D4\uBCC4\uACB0\uACFC\uD45C.csv"
+      : \uC6D4\uBCC4\uACB0\uACFC\uD45C_.csv;
     document.body.append(link);
     link.click();
     link.remove();
-    openCopyToast("월별 결과 표 CSV가 다운로드되었습니다.");
+    openCopyToast("\uC6D4\uBCC4 \uACB0\uACFC \uD45C CSV\uAC00 \uB2E4\uC6B4\uB85C\uB4DC\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
   } catch {
-    openCopyToast("CSV 다운로드에 실패했습니다. 다시 시도해 주세요.");
+    openCopyToast("CSV \uB2E4\uC6B4\uB85C\uB4DC\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.");
   } finally {
     URL.revokeObjectURL(url);
   }
@@ -187,7 +183,8 @@ const toHalfDayFloor = (hours) => Math.floor(Math.max(0, hours) * 2 / 8) / 2;
 const getGrantedLeaveHours = (grantDays) => grantDays * 8;
 
 const partOptions = computed(() => {
-  const parts = [...new Set(monthlyWorkers.value.map((worker) => worker.part).filter(Boolean))];
+  const parts = [...new Set(monthlyWorkers.value.map((worker) => worker.part).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, "en", { sensitivity: "base" }));
   return ["all", ...parts];
 });
 
@@ -222,7 +219,8 @@ const monthlyRows = computed(() =>
       holidayNightRemainMinutesText: toPaddedText(worker.holidayNightMinutes % 60),
       totalLeaveHoursText: toFixedText(totalLeaveHours, 2),
       carryLeaveHoursText: toFixedText(carryLeaveHours, 2),
-      grantDaysText: Number.isInteger(grantDays) ? String(grantDays) : grantDays.toFixed(1)
+      grantDaysText: Number.isInteger(grantDays) ? String(grantDays) : grantDays.toFixed(1),
+      remarkText: `수기 확인 필요 (${worker.issueCount}일)`
     };
   })
 );
@@ -449,6 +447,7 @@ const updateMonthlyFile = async (type, event) => {
             <col style="width: 74px">
             <col style="width: 60px">
             <col style="width: 64px">
+            <col style="width: 116px">
           </colgroup>
           <thead>
             <tr>
@@ -465,6 +464,7 @@ const updateMonthlyFile = async (type, event) => {
               <th rowspan="2" class="group-result-carry">이월 휴가(h)</th>
               <th rowspan="2" class="group-highlight">지급휴가(d)</th>
               <th rowspan="2" class="group-issue">연장근무 일수</th>
+              <th rowspan="2" class="group-note">비고</th>
             </tr>
             <tr>
               <th class="group-overtime-sub time-head">시</th>
@@ -504,7 +504,8 @@ const updateMonthlyFile = async (type, event) => {
               <td class="cell-total strong">{{ row.totalLeaveHoursText }}</td>
               <td class="cell-result-carry strong">{{ row.carryLeaveHoursText }}</td>
               <td class="cell-highlight strong">{{ row.grantDaysText }}</td>
-                <td class="cell-issue strong">{{ row.overtimeDayCount }}</td>
+              <td class="cell-issue strong">{{ row.overtimeDayCount }}</td>
+              <td class="cell-note">{{ row.remarkText }}</td>
             </tr>
           </tbody>
         </table>
@@ -905,7 +906,8 @@ h1 {
 .monthly-table .group-holiday,
 .monthly-table .group-total,
 .monthly-table .group-carry,
-.monthly-table .group-issue {
+.monthly-table .group-issue,
+.monthly-table .group-note {
   background: #f1f1f3;
 }
 
@@ -949,6 +951,10 @@ h1 {
   background: #eeeeef;
 }
 
+.monthly-table thead .group-note {
+  background: #eeeeef;
+}
+
 .monthly-table thead .group-highlight {
   background: #e3f4e5;
   border-top: 2px solid #7bb57f;
@@ -973,6 +979,14 @@ h1 {
 
 .monthly-table .cell-result-carry {
   background: #f2faf2;
+}
+
+.monthly-table .cell-note {
+  background: #fafafb;
+  color: var(--muted);
+  white-space: normal;
+  line-height: 1.45;
+  text-align: left;
 }
 
 .monthly-table .cell-highlight {
@@ -1135,3 +1149,5 @@ h1 {
   }
 }
 </style>
+
+
