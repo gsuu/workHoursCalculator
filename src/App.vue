@@ -57,9 +57,11 @@ const copyMonthlyTable = async () => {
     "\uD658\uC0B0\uC2DC\uAC04(h)",
     "\uC774\uC6D4 \uD734\uAC00(h)",
     "\uC9C0\uAE09\uD734\uAC00(d)",
-    "\uC5F0\uC7A5\uADFC\uBB34 \uC77C\uC218",
-    "\uBE44\uACE0"
+    "\uC5F0\uC7A5\uADFC\uBB34 \uC77C\uC218"
   ];
+  if (showRemarkColumn.value) {
+    headers.push("\uBE44\uACE0");
+  }
   const lines = filteredMonthlyRows.value.map((row) => [
     "\u0033\uC6D4",
     String(row.number),
@@ -78,7 +80,7 @@ const copyMonthlyTable = async () => {
     row.carryLeaveHoursText,
     row.grantDaysText,
     String(row.overtimeDayCount),
-    row.remarkText
+    ...(showRemarkColumn.value ? [row.remarkText] : [])
   ].join("\t"));
   try {
     await navigator.clipboard.writeText([headers.join("\t"), ...lines].join("\n"));
@@ -115,9 +117,11 @@ const downloadMonthlyTableCsv = async () => {
     "\uD658\uC0B0\uC2DC\uAC04(h)",
     "\uC774\uC6D4 \uD734\uAC00(h)",
     "\uC9C0\uAE09\uD734\uAC00(d)",
-    "\uC5F0\uC7A5\uADFC\uBB34 \uC77C\uC218",
-    "\uBE44\uACE0"
+    "\uC5F0\uC7A5\uADFC\uBB34 \uC77C\uC218"
   ];
+  if (showRemarkColumn.value) {
+    headers.push("\uBE44\uACE0");
+  }
   const rows = filteredMonthlyRows.value.map((row) => [
     "\u0033\uC6D4",
     String(row.number),
@@ -136,7 +140,7 @@ const downloadMonthlyTableCsv = async () => {
     row.carryLeaveHoursText,
     row.grantDaysText,
     String(row.overtimeDayCount),
-    row.remarkText
+    ...(showRemarkColumn.value ? [row.remarkText] : [])
   ]);
   const csv = [headers, ...rows]
     .map((line) => line.map(escapeCsvCell).join(","))
@@ -220,7 +224,7 @@ const monthlyRows = computed(() =>
       totalLeaveHoursText: toFixedText(totalLeaveHours, 2),
       carryLeaveHoursText: toFixedText(carryLeaveHours, 2),
       grantDaysText: Number.isInteger(grantDays) ? String(grantDays) : grantDays.toFixed(1),
-      remarkText: `수기 확인 필요 (${worker.issueCount}일)`
+      remarkText: worker.issueCount > 0 ? `수기 확인 필요 (${worker.issueCount}일)` : ""
     };
   })
 );
@@ -253,6 +257,10 @@ const filteredMonthlyRows = computed(() => {
     number: index + 1
   }));
 });
+
+const showRemarkColumn = computed(() =>
+  filteredMonthlyRows.value.some((row) => Boolean(row.remarkText))
+);
 
 const updateTextMap = (target, employeeId, value) => {
   target.value = {
@@ -447,7 +455,7 @@ const updateMonthlyFile = async (type, event) => {
             <col style="width: 74px">
             <col style="width: 60px">
             <col style="width: 64px">
-            <col style="width: 116px">
+            <col v-if="showRemarkColumn" style="width: 116px">
           </colgroup>
           <thead>
             <tr>
@@ -464,7 +472,7 @@ const updateMonthlyFile = async (type, event) => {
               <th rowspan="2" class="group-result-carry">이월 휴가(h)</th>
               <th rowspan="2" class="group-highlight">지급휴가(d)</th>
               <th rowspan="2" class="group-issue">연장근무 일수</th>
-              <th rowspan="2" class="group-note">비고</th>
+              <th v-if="showRemarkColumn" rowspan="2" class="group-note">비고</th>
             </tr>
             <tr>
               <th class="group-overtime-sub time-head">시</th>
@@ -505,7 +513,7 @@ const updateMonthlyFile = async (type, event) => {
               <td class="cell-result-carry strong">{{ row.carryLeaveHoursText }}</td>
               <td class="cell-highlight strong">{{ row.grantDaysText }}</td>
               <td class="cell-issue strong">{{ row.overtimeDayCount }}</td>
-              <td class="cell-note">{{ row.remarkText }}</td>
+              <td v-if="showRemarkColumn" class="cell-note">{{ row.remarkText }}</td>
             </tr>
           </tbody>
         </table>
