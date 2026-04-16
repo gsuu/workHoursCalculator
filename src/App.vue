@@ -1284,6 +1284,11 @@ h1 {
   z-index: 3;
 }
 
+.monthly-table thead th[rowspan="2"] {
+  top: 0;
+  z-index: 4;
+}
+
 .monthly-table thead tr:nth-child(2) th {
   top: var(--monthly-header-offset);
 }
