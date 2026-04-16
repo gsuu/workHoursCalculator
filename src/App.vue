@@ -541,10 +541,6 @@ const updateMonthlyFile = async (type, event) => {
           <span>일요일과 공휴일은 휴일 기준을 적용하고 8시간 이내 1.5배, 8시간 초과분은 2.0배, 야간은 별도 가산합니다.</span>
         </div>
         <div class="guide-row">
-          <strong>퇴근 누락/미신청</strong>
-          <span>퇴근이 늦게 찍혀 있어도 상세표 연장/야간이 0이면 미신청으로 보고 정규 퇴근시각까지만 인정합니다.</span>
-        </div>
-        <div class="guide-row">
           <strong>지급휴가(d)</strong>
           <span>환산시간을 8시간 = 1일 기준으로 계산하고, 0.5일 단위로 지급합니다. 이월 휴가는 4시간 미만만 유지됩니다.</span>
         </div>
