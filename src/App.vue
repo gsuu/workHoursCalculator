@@ -677,8 +677,8 @@ watch(
               <th rowspan="2" class="group-carry">전월 이월 휴가(h)</th>
               <th colspan="2" class="group-overtime">평일 연장근무</th>
               <th colspan="2" class="group-night">평일 야간근무</th>
-              <th colspan="2" class="group-holiday">휴일/휴무일 연장근무</th>
-              <th colspan="2" class="group-holiday">휴일/휴무일 야간근무</th>
+              <th colspan="2" class="group-holiday-overtime">휴일/휴무일 연장근무</th>
+              <th colspan="2" class="group-holiday-night">휴일/휴무일 야간근무</th>
               <th rowspan="2" class="group-total">환산시간(h)</th>
               <th rowspan="2" class="group-issue">연장근무 일수</th>
               <th rowspan="2" class="group-result-carry">이월 휴가(h)</th>
@@ -690,10 +690,10 @@ watch(
               <th class="group-overtime-sub time-head">분</th>
               <th class="group-night-sub time-head">시</th>
               <th class="group-night-sub time-head">분</th>
-              <th class="group-holiday-sub time-head">시</th>
-              <th class="group-holiday-sub time-head">분</th>
-              <th class="group-holiday-sub time-head">시</th>
-              <th class="group-holiday-sub time-head">분</th>
+              <th class="group-holiday-overtime-sub time-head">시</th>
+              <th class="group-holiday-overtime-sub time-head">분</th>
+              <th class="group-holiday-night-sub time-head">시</th>
+              <th class="group-holiday-night-sub time-head">분</th>
             </tr>
           </thead>
           <tbody>
@@ -716,10 +716,10 @@ watch(
               <td class="cell-overtime cell-time">{{ row.overtimeRemainMinutesText }}</td>
               <td class="cell-night cell-time">{{ row.nightHoursText }}</td>
               <td class="cell-night cell-time">{{ row.nightRemainMinutesText }}</td>
-              <td class="cell-holiday cell-time">{{ row.holidayOvertimeHoursText }}</td>
-              <td class="cell-holiday cell-time">{{ row.holidayOvertimeRemainMinutesText }}</td>
-              <td class="cell-holiday cell-time">{{ row.holidayNightHoursText }}</td>
-              <td class="cell-holiday cell-time">{{ row.holidayNightRemainMinutesText }}</td>
+              <td class="cell-holiday-overtime cell-time">{{ row.holidayOvertimeHoursText }}</td>
+              <td class="cell-holiday-overtime cell-time">{{ row.holidayOvertimeRemainMinutesText }}</td>
+              <td class="cell-holiday-night cell-time">{{ row.holidayNightHoursText }}</td>
+              <td class="cell-holiday-night cell-time">{{ row.holidayNightRemainMinutesText }}</td>
               <td class="cell-total strong">{{ row.totalLeaveHoursText }}</td>
               <td class="cell-issue strong">{{ row.overtimeDayCount }}</td>
               <td class="cell-result-carry strong">{{ row.carryLeaveHoursText }}</td>
@@ -1272,7 +1272,8 @@ h1 {
 
 .monthly-table .group-overtime,
 .monthly-table .group-night,
-.monthly-table .group-holiday,
+.monthly-table .group-holiday-overtime,
+.monthly-table .group-holiday-night,
 .monthly-table .group-total,
 .monthly-table .group-carry,
 .monthly-table .group-issue,
@@ -1296,12 +1297,20 @@ h1 {
   background: #f0ebfb;
 }
 
-.monthly-table thead .group-holiday {
+.monthly-table thead .group-holiday-overtime {
   background: #fbeaea;
 }
 
-.monthly-table thead .group-holiday-sub {
+.monthly-table thead .group-holiday-overtime-sub {
   background: #fbeaea;
+}
+
+.monthly-table thead .group-holiday-night {
+  background: #fff1e6;
+}
+
+.monthly-table thead .group-holiday-night-sub {
+  background: #fff1e6;
 }
 
 .monthly-table thead .group-total {
@@ -1330,10 +1339,12 @@ h1 {
 
 .monthly-table .group-overtime-sub,
 .monthly-table .group-night-sub,
-.monthly-table .group-holiday-sub,
+.monthly-table .group-holiday-overtime-sub,
+.monthly-table .group-holiday-night-sub,
 .monthly-table .cell-overtime,
 .monthly-table .cell-night,
-.monthly-table .cell-holiday,
+.monthly-table .cell-holiday-overtime,
+.monthly-table .cell-holiday-night,
 .monthly-table .cell-issue,
 .monthly-table .cell-total {
   background: #fafafb;
@@ -1345,6 +1356,22 @@ h1 {
 
 .monthly-table .cell-result-carry {
   background: #f2faf2;
+}
+
+.monthly-table .cell-overtime {
+  background: #f8fbfe;
+}
+
+.monthly-table .cell-night {
+  background: #faf8fe;
+}
+
+.monthly-table .cell-holiday-overtime {
+  background: #fffafa;
+}
+
+.monthly-table .cell-holiday-night {
+  background: #fffbf7;
 }
 
 .monthly-table .cell-note {
