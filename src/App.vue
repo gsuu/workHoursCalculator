@@ -1227,15 +1227,18 @@ h1 {
   margin-top: 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  overflow-x: auto;
+  overflow: visible;
   background: #fff;
+  position: relative;
 }
 
 .monthly-table {
   width: 100%;
   min-width: 0;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: fixed;
+  --monthly-header-offset: 42px;
 }
 
 .monthly-table th,
@@ -1268,6 +1271,21 @@ h1 {
   white-space: normal;
   line-height: 1.35;
   word-break: keep-all;
+}
+
+.monthly-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.monthly-table thead tr:first-child th {
+  top: 0;
+  z-index: 3;
+}
+
+.monthly-table thead tr:nth-child(2) th {
+  top: var(--monthly-header-offset);
 }
 
 .monthly-table .group-overtime,
@@ -1407,7 +1425,6 @@ h1 {
   border-right: none;
 }
 
-.monthly-table .group-highlight,
 .monthly-table .cell-highlight {
   position: relative;
 }
