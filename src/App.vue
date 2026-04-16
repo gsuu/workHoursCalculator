@@ -150,8 +150,8 @@ const copyMonthlyTable = async () => {
   const headers = [
     "\uC6D4\uBCC4",
     "\uBC88\uD638",
-    "Part",
-    "\uD300\uC6D0\uBA85",
+    "\uD300\uBA85",
+    "\uC774\uB984",
     "\uC804\uC6D4 \uC774\uC6D4 \uD734\uAC00(h)",
     "\uD3C9\uC77C \uC5F0\uC7A5\uADFC\uBB34(\uC2DC)",
     "\uD3C9\uC77C \uC5F0\uC7A5\uADFC\uBB34(\uBD84)",
@@ -210,8 +210,8 @@ const downloadMonthlyTableCsv = async () => {
   const headers = [
     "\uC6D4\uBCC4",
     "\uBC88\uD638",
-    "Part",
-    "\uD300\uC6D0\uBA85",
+    "\uD300\uBA85",
+    "\uC774\uB984",
     "\uC804\uC6D4 \uC774\uC6D4 \uD734\uAC00(h)",
     "\uD3C9\uC77C \uC5F0\uC7A5\uADFC\uBB34(\uC2DC)",
     "\uD3C9\uC77C \uC5F0\uC7A5\uADFC\uBB34(\uBD84)",
@@ -613,7 +613,7 @@ watch(
               <svg viewBox="0 0 16 16" aria-hidden="true">
                 <path d="M2.5 3.5h11m-9.5 4h8m-6 4h5" />
               </svg>
-              <span>Part</span>
+              <span>Team</span>
             </span>
             <select v-model="selectedPart">
               <option value="all">전체</option>
@@ -672,8 +672,8 @@ watch(
             <tr>
               <th rowspan="2">월별</th>
               <th rowspan="2">번호</th>
-              <th rowspan="2">Part</th>
-              <th rowspan="2">팀원명</th>
+              <th rowspan="2">팀명</th>
+              <th rowspan="2">이름</th>
               <th rowspan="2" class="group-carry">전월 이월 휴가(h)</th>
               <th colspan="2" class="group-overtime">평일 연장근무</th>
               <th colspan="2" class="group-night">평일 야간근무</th>
