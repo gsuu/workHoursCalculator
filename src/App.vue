@@ -329,7 +329,7 @@ const downloadMonthlyTableCsv = async () => {
     link.href = url;
     link.download = selectedPart.value === "all"
       ? "\uC6D4\uBCC4\uACB0\uACFC\uD45C.csv"
-      : `\uC6D4\uBCC4\uACB0\uACFC\uD45C_${selectedPart.value}.csv`;
+      : `\uC6D4\uBCC4\uACB0\uACFC\uD45C_${selectedPartLabel.value}.csv`;
     document.body.append(link);
     link.click();
     link.remove();
@@ -374,11 +374,49 @@ const formatIssueDates = (issueDates) => {
     .join(", ");
 };
 
+const normalizeText = (value) => String(value ?? "").trim().replace(/\s+/g, " ");
+const getPartGroup = (part) => {
+  const normalized = normalizeText(part);
+  if (!normalized) return "";
+
+  const grouped = normalized.replace(/\s+\d+$/, "");
+  return grouped || normalized;
+};
+
 const partOptions = computed(() => {
   const parts = [...new Set(monthlyWorkers.value.map((worker) => worker.part).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, "en", { sensitivity: "base" }));
-  return ["all", ...parts];
+
+  const groupedCounts = parts.reduce((map, part) => {
+    const group = getPartGroup(part);
+    if (!group) return map;
+    map.set(group, (map.get(group) ?? 0) + 1);
+    return map;
+  }, new Map());
+
+  const groupOptions = [...groupedCounts.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([group]) => ({
+      value: `group:${group}`,
+      label: group
+    }))
+    .sort((left, right) => left.label.localeCompare(right.label, "en", { sensitivity: "base" }));
+
+  const partItems = parts.map((part) => ({
+    value: `part:${part}`,
+    label: part
+  }));
+
+  return [
+    { value: "all", label: "전체" },
+    ...groupOptions,
+    ...partItems
+  ];
 });
+
+const selectedPartLabel = computed(() =>
+  partOptions.value.find((option) => option.value === selectedPart.value)?.label || selectedPart.value
+);
 
 const monthlyRows = computed(() =>
   monthlyWorkers.value.map((worker, index) => {
@@ -423,7 +461,9 @@ const monthlyRows = computed(() =>
 const filteredMonthlyRows = computed(() => {
   const rows = selectedPart.value === "all"
     ? monthlyRows.value
-    : monthlyRows.value.filter((row) => row.part === selectedPart.value);
+    : selectedPart.value.startsWith("group:")
+      ? monthlyRows.value.filter((row) => getPartGroup(row.part) === selectedPart.value.slice(6))
+      : monthlyRows.value.filter((row) => row.part === selectedPart.value.slice(5));
 
   const sortedRows = [...rows].sort((left, right) => {
     if (selectedSort.value === "grantDays") {
@@ -863,13 +903,12 @@ watch(
               <span>Team</span>
             </span>
             <select v-model="selectedPart">
-              <option value="all">전체</option>
               <option
-                v-for="part in partOptions.filter((part) => part !== 'all')"
-                :key="part"
-                :value="part"
+                v-for="option in partOptions"
+                :key="option.value"
+                :value="option.value"
               >
-                {{ part }}
+                {{ option.label }}
               </option>
             </select>
           </label>
@@ -1621,6 +1660,42 @@ h1 {
 
 .monthly-table tbody td {
   background: #fafafb;
+}
+
+.monthly-table tbody tr:hover td {
+  background: #f4f5f7;
+}
+
+.monthly-table tbody tr:hover .cell-carry {
+  background: #fdf1cc;
+}
+
+.monthly-table tbody tr:hover .cell-result-carry {
+  background: #e8f6e8;
+}
+
+.monthly-table tbody tr:hover .cell-overtime {
+  background: #eef6fd;
+}
+
+.monthly-table tbody tr:hover .cell-night {
+  background: #f3eefc;
+}
+
+.monthly-table tbody tr:hover .cell-holiday-overtime {
+  background: #fff1f1;
+}
+
+.monthly-table tbody tr:hover .cell-holiday-night {
+  background: #fff5ec;
+}
+
+.monthly-table tbody tr:hover .cell-note {
+  background: #f4f5f7;
+}
+
+.monthly-table tbody tr:hover .cell-highlight {
+  background: #e8f7e9;
 }
 
 .monthly-table th {
