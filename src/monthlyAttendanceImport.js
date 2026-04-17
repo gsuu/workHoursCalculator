@@ -9,6 +9,11 @@ const DETAIL_GROUP_WIDTH = 6;
 const normalizeText = (value) => String(value ?? "").trim();
 const hasText = (value) => normalizeText(value).length > 0;
 
+const readWorkbook = (arrayBuffer) => XLSX.read(arrayBuffer, {
+  type: "array",
+  cellDates: false
+});
+
 const pickDataRows = (workbook) => {
   let bestRows = [];
 
@@ -32,15 +37,36 @@ const pickDataRows = (workbook) => {
   return bestRows;
 };
 
+const pickGuideRows = (workbook) => {
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      raw: false,
+      defval: "",
+      blankrows: true
+    });
+
+    const guideRows = rows.slice(0, 6).map((row) => normalizeText(row?.[0]));
+    const hasGuideTitle = guideRows.some((text) => text.includes("(안내)"));
+    const hasDetailGuide = guideRows.some((text) => text.includes("연장근무"))
+      && guideRows.some((text) => text.includes("야간근무"));
+
+    if (hasGuideTitle && hasDetailGuide) {
+      return rows;
+    }
+  }
+
+  return [];
+};
+
 const toRows = (arrayBuffer) => {
-  const workbook = XLSX.read(arrayBuffer, {
-    type: "array",
-    cellDates: false
-  });
+  const workbook = readWorkbook(arrayBuffer);
   return pickDataRows(workbook);
 };
 
 const readFileRows = async (file) => file.arrayBuffer().then(toRows);
+const readFileWorkbook = async (file) => file.arrayBuffer().then(readWorkbook);
 
 const DETAIL_WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -84,8 +110,8 @@ export const validateAttendanceRows = (rows) => {
   return findMonthInfoInRows(rows.slice(0, 4));
 };
 
-export const validateDetailRows = (rows, monthInfo = null) => {
-  const guideRows = rows.slice(0, 6).map((row) => normalizeText(row?.[0]));
+export const validateDetailRows = (rows, monthInfo = null, guideSourceRows = rows) => {
+  const guideRows = guideSourceRows.slice(0, 6).map((row) => normalizeText(row?.[0]));
 
   const hasGuideTitle = guideRows.some((text) => text.includes("(안내)"));
   const hasDetailGuide = guideRows.some((text) => text.includes("연장근무"))
@@ -453,6 +479,50 @@ const parseDetailRows = (rows, monthInfo) => {
   return rules;
 };
 
+const parseValidatedDetailRows = (rows, monthInfo, guideRows) => {
+  validateDetailRows(rows, monthInfo, guideRows);
+  const rules = new Map();
+  const nameRow = rows[0] ?? [];
+  const idRow = rows[1] ?? [];
+
+  for (
+    let columnIndex = DETAIL_GROUP_START_COLUMN;
+    columnIndex < nameRow.length;
+    columnIndex += DETAIL_GROUP_WIDTH
+  ) {
+    const employeeId = normalizeText(idRow[columnIndex]);
+    if (!employeeId) continue;
+
+    for (let rowIndex = 5; rowIndex < rows.length; rowIndex += 1) {
+      const row = rows[rowIndex] ?? [];
+      const firstCell = normalizeText(row[0]);
+      if (!firstCell) continue;
+      if (firstCell.includes("珥??⑷퀎")) break;
+
+      const dayMatch = firstCell.match(/^(\d{1,2})/);
+      if (!dayMatch) continue;
+
+      const day = Number(dayMatch[1]);
+      const date = formatImportDate(monthInfo.year, monthInfo.month, day);
+      const ruleText = normalizeText(row[columnIndex]);
+      const overtimeMinutes = parseDetailDurationMinutes(row[columnIndex + 2]);
+      const nightMinutes = parseDetailDurationMinutes(row[columnIndex + 3]);
+      const holiday150Minutes = parseDetailDurationMinutes(row[columnIndex + 4]);
+      const holiday200Minutes = parseDetailDurationMinutes(row[columnIndex + 5]);
+      if (!ruleText && !overtimeMinutes && !nightMinutes && !holiday150Minutes && !holiday200Minutes) continue;
+
+      rules.set(`${employeeId}:${date}`, {
+        ruleText,
+        overtimeMinutes,
+        nightMinutes,
+        holidayMinutes: holiday150Minutes + holiday200Minutes
+      });
+    }
+  }
+
+  return rules;
+};
+
 const resolveWorkModeOverride = (date, ruleText) => {
   const parsedDate = parseDateValue(date);
   if (!parsedDate) return null;
@@ -489,14 +559,16 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
     throw new Error("근태현황과 근무결과(상세) 파일이 모두 필요합니다.");
   }
 
-  const [attendanceRows, detailRows] = await Promise.all([
+  const [attendanceRows, detailWorkbook] = await Promise.all([
     readFileRows(attendanceFile),
-    readFileRows(detailFile)
+    readFileWorkbook(detailFile)
   ]);
+  const detailRows = pickDataRows(detailWorkbook);
+  const detailGuideRows = pickGuideRows(detailWorkbook);
 
   const attendance = parseAttendanceRows(attendanceRows);
-  validateDetailRows(detailRows, attendance.monthInfo);
-  const detailRules = parseDetailRows(detailRows, attendance.monthInfo);
+  validateDetailRows(detailRows, attendance.monthInfo, detailGuideRows);
+  const detailRules = parseValidatedDetailRows(detailRows, attendance.monthInfo, detailGuideRows);
   const workerMap = new Map();
 
   for (const record of attendance.records.values()) {
@@ -652,7 +724,9 @@ export const validateAttendanceFile = async (attendanceFile) => {
 
 export const validateDetailFile = async (detailFile, attendanceMonthInfo = null) => {
   if (!detailFile) return;
-  const detailRows = await readFileRows(detailFile);
-  validateDetailRows(detailRows, attendanceMonthInfo);
+  const workbook = await readFileWorkbook(detailFile);
+  const detailRows = pickDataRows(workbook);
+  const detailGuideRows = pickGuideRows(workbook);
+  validateDetailRows(detailRows, attendanceMonthInfo, detailGuideRows);
   return null;
 };
