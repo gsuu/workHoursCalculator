@@ -107,14 +107,14 @@ const createFileStatus = (file, state = "idle") => {
   if (state === "valid") {
     return {
       state,
-      message: `${file.name} 정상입니다.`
+      message: `${file.name} ⭕`
     };
   }
 
   if (state === "invalid") {
     return {
       state,
-      message: `${file.name} 확인해주세요.`
+      message: `${file.name} ✖️ 파일에 오류가 있습니다. 확인해주세요`
     };
   }
 
