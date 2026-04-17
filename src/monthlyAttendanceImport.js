@@ -39,6 +39,8 @@ const toRows = (arrayBuffer) => {
   return pickDataRows(workbook);
 };
 
+const readFileRows = async (file) => file.arrayBuffer().then(toRows);
+
 const extractMonthInfo = (value) => {
   const compact = normalizeText(value).replace(/\s+/g, "");
   const match = compact.match(/(\d{4})\D*(\d{1,2})/);
@@ -391,8 +393,8 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
   }
 
   const [attendanceRows, detailRows] = await Promise.all([
-    attendanceFile.arrayBuffer().then(toRows),
-    detailFile.arrayBuffer().then(toRows)
+    readFileRows(attendanceFile),
+    readFileRows(detailFile)
   ]);
 
   const attendance = parseAttendanceRows(attendanceRows);
@@ -540,4 +542,16 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
     processedCount: workers.length,
     sourceCount: attendance.records.size
   };
+};
+
+export const validateAttendanceFile = async (attendanceFile) => {
+  if (!attendanceFile) return;
+  const attendanceRows = await readFileRows(attendanceFile);
+  parseAttendanceRows(attendanceRows);
+};
+
+export const validateDetailFile = async (detailFile) => {
+  if (!detailFile) return;
+  const detailRows = await readFileRows(detailFile);
+  parseDetailRows(detailRows, { year: 2000, month: 1 });
 };

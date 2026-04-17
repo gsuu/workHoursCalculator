@@ -1,7 +1,11 @@
 ﻿<script setup>
 import { computed, onMounted, ref, watch } from "vue";
 
-import { parseMonthlyResultFiles } from "./monthlyAttendanceImport.js";
+import {
+  parseMonthlyResultFiles,
+  validateAttendanceFile,
+  validateDetailFile
+} from "./monthlyAttendanceImport.js";
 import {
   PRELOADED_MONTHLY_PERIOD_LABEL,
   PRELOADED_MONTHLY_WORKERS
@@ -402,11 +406,26 @@ const updateCarryHoursInput = (employeeId, value) => {
 };
 
 const loadMonthlyWorkers = async () => {
-  if (!attendanceImportFile.value || !detailImportFile.value) {
-    monthlyWorkers.value = [];
+  if (!attendanceImportFile.value && !detailImportFile.value) {
     monthlyImportError.value = "";
-    selectedPart.value = "all";
-    selectedSort.value = "name";
+    return;
+  }
+
+  if (!attendanceImportFile.value || !detailImportFile.value) {
+    try {
+      if (attendanceImportFile.value) {
+        await validateAttendanceFile(attendanceImportFile.value);
+      }
+
+      if (detailImportFile.value) {
+        await validateDetailFile(detailImportFile.value);
+      }
+
+      monthlyImportError.value = "";
+    } catch (error) {
+      monthlyImportError.value = "파일을 다시 확인해주세요.";
+      console.error(error);
+    }
     return;
   }
 
