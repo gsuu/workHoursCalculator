@@ -428,9 +428,8 @@ const loadMonthlyWorkers = async () => {
     monthlyWorkers.value = [];
     selectedPart.value = "all";
     selectedSort.value = "name";
-    monthlyImportError.value = error instanceof Error
-      ? error.message
-      : "파일을 읽는 중 오류가 발생했습니다.";
+    monthlyImportError.value = "파일에 오류가 있습니다. 원본 파일을 그대로 업로드해주세요.";
+    console.error(error);
   } finally {
     monthlyImportLoading.value = false;
   }
