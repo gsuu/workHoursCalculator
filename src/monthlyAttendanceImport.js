@@ -249,6 +249,68 @@ const extractRecordedTime = (value) => {
   return match ? match[1] : "";
 };
 
+const extractHalfLeaveMeta = (value) => {
+  const text = normalizeText(value);
+  if (!text || text === "-") {
+    return {
+      label: "",
+      position: ""
+    };
+  }
+
+  if (text.includes("오전반차")) {
+    return {
+      label: "오전반차",
+      position: "start"
+    };
+  }
+
+  if (text.includes("오후반차")) {
+    return {
+      label: "오후반차",
+      position: "end"
+    };
+  }
+
+  const rangeMatch = text.match(/(\d{2}:\d{2})(?::\d{2})?-(\d{2}:\d{2})(?::\d{2})?/);
+  const resolveRangePosition = () => {
+    if (!rangeMatch) return "";
+
+    const startMinutes = toTimeMinutes(rangeMatch[1]);
+    const endMinutes = toTimeMinutes(rangeMatch[2]);
+    if (startMinutes == null || endMinutes == null) return "";
+
+    if (endMinutes <= 780) {
+      return "start";
+    }
+
+    if (startMinutes >= 720) {
+      return "end";
+    }
+
+    return "";
+  };
+
+  if (text.includes("반반차")) {
+    return {
+      label: "반반차",
+      position: resolveRangePosition() || "start"
+    };
+  }
+
+  if (text.includes("반차")) {
+    return {
+      label: "반차",
+      position: resolveRangePosition() || "start"
+    };
+  }
+
+  return {
+    label: "",
+    position: ""
+  };
+};
+
 export const inferDefaultEndTime = (start) => {
   const text = normalizeText(start);
   const match = text.match(/^(\d{2}):(\d{2})$/);
@@ -266,6 +328,14 @@ export const inferScheduledStartTimeFromRule = (ruleText) => {
   if (text.includes("8시출근")) return "08:00";
   if (text.includes("9시출근")) return "09:00";
   if (text.includes("10시출근")) return "10:00";
+  return "";
+};
+
+export const inferScheduledShiftLabelFromRule = (ruleText) => {
+  const text = normalizeText(ruleText);
+  if (text.includes("8시출근")) return "8시출근";
+  if (text.includes("9시출근")) return "9시출근";
+  if (text.includes("10시출근")) return "10시출근";
   return "";
 };
 
@@ -464,6 +534,7 @@ const createWorkerSummary = ({ employeeId, name = "", part = "" }) => ({
   employeeId,
   name,
   part,
+  scheduledShiftLabel: "",
   div: "",
   rank: "",
   nightMinutes: 0,
@@ -477,7 +548,36 @@ const createWorkerSummary = ({ employeeId, name = "", part = "" }) => ({
   leaveGrantMinutes: 0,
   overtimeDayCount: 0,
   issueCount: 0,
-  issueDates: []
+  issueDates: [],
+  dailyRecords: []
+});
+
+const createDailyRecord = ({
+  date,
+  workModeLabel = "",
+  start = "",
+  end = "",
+  recordedStart = "",
+  recordedEnd = "",
+  halfLeaveLabel = "",
+  halfLeavePosition = "",
+  hasApprovedOvertime = false,
+  overtimeMinutes = 0,
+  nightMinutes = 0,
+  issueText = ""
+}) => ({
+  date,
+  workModeLabel,
+  start,
+  end,
+  recordedStart,
+  recordedEnd,
+  halfLeaveLabel,
+  halfLeavePosition,
+  hasApprovedOvertime,
+  overtimeMinutes,
+  nightMinutes,
+  issueText
 });
 
 const parseAttendanceRows = (rows) => {
@@ -499,6 +599,7 @@ const parseAttendanceRows = (rows) => {
 
       const start = extractRecordedTime(row[columnIndex]);
       const end = extractRecordedTime(leaveRow[columnIndex]);
+      const halfLeaveMeta = extractHalfLeaveMeta(rows[rowIndex + 2]?.[columnIndex]);
       if (!start && !end) continue;
 
       const date = formatImportDate(monthInfo.year, monthInfo.month, dayValue);
@@ -508,7 +609,9 @@ const parseAttendanceRows = (rows) => {
         part: normalizeText(row[2]),
         date,
         start,
-        end
+        end,
+        halfLeaveLabel: halfLeaveMeta.label,
+        halfLeavePosition: halfLeaveMeta.position
       });
     }
   }
@@ -673,6 +776,9 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
 
     const detail = detailRules.get(`${record.employeeId}:${record.date}`) ?? null;
     const ruleText = detail?.ruleText ?? "";
+    const scheduledShiftLabel = inferScheduledShiftLabelFromRule(ruleText);
+    const scheduledStartTime = inferScheduledStartTimeFromRule(ruleText);
+    const scheduledEndTime = inferScheduledEndTimeFromRule(ruleText);
     const workModeOverride = resolveWorkModeOverride(record.date, ruleText);
     let start = resolveRecordedStartTime({
       start: record.start,
@@ -694,6 +800,9 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
       name: record.name,
       part: record.part
     });
+    if (!current.scheduledShiftLabel && scheduledShiftLabel) {
+      current.scheduledShiftLabel = scheduledShiftLabel;
+    }
 
     if (
       shouldIgnoreUnapprovedRecord({
@@ -709,6 +818,21 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
     }
 
     if (!start || !end) {
+      current.dailyRecords.push(createDailyRecord({
+        date: record.date,
+        workModeLabel: workModeOverride === "holiday"
+          ? "휴일"
+          : workModeOverride === "offday"
+            ? "휴무일"
+            : "평일",
+        start,
+        end,
+        recordedStart: record.start,
+        recordedEnd: record.end,
+        halfLeaveLabel: record.halfLeaveLabel,
+        halfLeavePosition: record.halfLeavePosition,
+        issueText: "수기 확인 필요"
+      }));
       current.issueCount += 1;
       appendIssueDate(current, record.date);
       workerMap.set(record.employeeId, current);
@@ -740,6 +864,21 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
         approvedHolidayMinutes: detail?.holidayMinutes ?? 0
       })
     ) {
+      current.dailyRecords.push(createDailyRecord({
+        date: record.date,
+        workModeLabel: workModeOverride === "holiday"
+          ? "휴일"
+          : workModeOverride === "offday"
+            ? "휴무일"
+            : "평일",
+        start,
+        end,
+        recordedStart: record.start,
+        recordedEnd: record.end,
+        halfLeaveLabel: record.halfLeaveLabel,
+        halfLeavePosition: record.halfLeavePosition,
+        issueText: "수기 확인 필요"
+      }));
       current.issueCount += 1;
       appendIssueDate(current, record.date);
       workerMap.set(record.employeeId, current);
@@ -750,18 +889,37 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
       date: record.date,
       start,
       end,
-      workModeOverride
+      workModeOverride,
+      scheduledStartTime,
+      scheduledEndTime
     });
 
     if (result.error) {
+      current.dailyRecords.push(createDailyRecord({
+        date: record.date,
+        workModeLabel: result.workModeLabel || (
+          workModeOverride === "holiday"
+            ? "휴일"
+            : workModeOverride === "offday"
+              ? "휴무일"
+              : "평일"
+        ),
+        start,
+        end,
+        recordedStart: record.start,
+        recordedEnd: record.end,
+        halfLeaveLabel: record.halfLeaveLabel,
+        halfLeavePosition: record.halfLeavePosition,
+        issueText: "수기 확인 필요"
+      }));
       current.issueCount += 1;
       appendIssueDate(current, record.date);
       workerMap.set(record.employeeId, current);
       continue;
     }
 
-    current.nightMinutes += result.nightTotal;
-    current.overtimeMinutes += result.overtimeTotal;
+    current.nightMinutes += result.displayNightMinutes;
+    current.overtimeMinutes += result.displayOvertimeMinutes;
     current.holidayOvertimeMinutes += result.holidayOvertimeMinutes;
     current.holidayNightMinutes += result.holidayNightMinutes;
     current.holidayWorkMinutes += result.holidayWorkMinutes;
@@ -769,6 +927,20 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
     current.holidayNightGrantMinutes += result.holidayNightGrantMinutes;
     current.holidayGrantMinutes += result.workMode === "ordinary" ? 0 : result.leaveGrantMinutes;
     current.leaveGrantMinutes += result.leaveGrantMinutes;
+    current.dailyRecords.push(createDailyRecord({
+      date: record.date,
+      workModeLabel: result.workModeLabel,
+      start,
+      end,
+      recordedStart: record.start,
+      recordedEnd: record.end,
+      halfLeaveLabel: record.halfLeaveLabel,
+      halfLeavePosition: record.halfLeavePosition,
+      hasApprovedOvertime: hasApprovedOvertime(detail),
+      overtimeMinutes: result.displayOvertimeMinutes,
+      nightMinutes: result.displayNightMinutes,
+      issueText: ""
+    }));
     if (hasApprovedOvertime(detail)) {
       current.overtimeDayCount += 1;
     }
@@ -786,7 +958,8 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
         holidayOvertimeConvertedHours: Number((worker.holidayOvertimeGrantMinutes / 60).toFixed(3)),
         holidayNightConvertedHours: Number((worker.holidayNightGrantMinutes / 60).toFixed(3)),
         roundedGrantMinutes,
-        leaveGrantLabel: formatMinutesLabel(roundedGrantMinutes)
+        leaveGrantLabel: formatMinutesLabel(roundedGrantMinutes),
+        dailyRecords: [...worker.dailyRecords].sort((left, right) => left.date.localeCompare(right.date))
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name, "ko"));

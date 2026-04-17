@@ -288,3 +288,96 @@ test("합계 통계는 평일 150/200과 휴일 환산을 정확히 누적한다
   assert.equal(summary.weekendHolidayCount, 1);
   assert.equal(summary.weekendHolidayWeightedText, "12.00");
 });
+
+test("9시출근 규칙이면 9시 이전 출근분은 계산에서 제외한다", () => {
+  const result = calculateEntry({
+    date: "2026-04-15",
+    start: "08:00",
+    end: "18:00",
+    scheduledStartTime: "09:00",
+    scheduledEndTime: "18:00"
+  });
+
+  assert.equal(result.error, "");
+  assert.equal(result.total, 480);
+  assert.equal(result.weekday150, 0);
+  assert.equal(result.weekday200, 0);
+  assert.equal(result.overtimeTotal, 0);
+});
+
+test("8시출근 규칙이면 8시부터 일반근무로 계산한다", () => {
+  const result = calculateEntry({
+    date: "2026-04-15",
+    start: "08:00",
+    end: "18:00",
+    scheduledStartTime: "08:00",
+    scheduledEndTime: "17:00"
+  });
+
+  assert.equal(result.error, "");
+  assert.equal(result.total, 540);
+  assert.equal(result.weekday150, 60);
+  assert.equal(result.weekday200, 0);
+  assert.equal(result.overtimeTotal, 60);
+});
+
+test("9시출근 규칙이면 8시 출근 후 23시 퇴근에서도 9시 이전 1시간은 제외한다", () => {
+  const result = calculateEntry({
+    date: "2026-04-15",
+    start: "08:00",
+    end: "23:00",
+    scheduledStartTime: "09:00",
+    scheduledEndTime: "18:00"
+  });
+
+  assert.equal(result.error, "");
+  assert.equal(result.total, 780);
+  assert.equal(result.weekday150, 240);
+  assert.equal(result.weekday200, 60);
+  assert.equal(result.overtimeTotal, 300);
+});
+
+test("9시출근 규칙이면 지각해도 연장근무 시작 시각은 18시 기준으로 본다", () => {
+  const result = calculateEntry({
+    date: "2026-04-15",
+    start: "09:30",
+    end: "19:00",
+    scheduledStartTime: "09:00",
+    scheduledEndTime: "18:00"
+  });
+
+  assert.equal(result.error, "");
+  assert.equal(result.total, 510);
+  assert.equal(result.weekday150, 60);
+  assert.equal(result.weekday200, 0);
+  assert.equal(result.overtimeTotal, 60);
+});
+test("평일 연장근무 표시 시간은 주간 연장분만 보여주고 야간은 별도로 분리한다", () => {
+  const result = calculateEntry({
+    date: "2026-04-15",
+    start: "18:00",
+    end: "23:30",
+    scheduledStartTime: "09:00",
+    scheduledEndTime: "18:00"
+  });
+
+  assert.equal(result.error, "");
+  assert.equal(result.displayOvertimeMinutes, 240);
+  assert.equal(result.displayNightMinutes, 90);
+  assert.equal(result.overtimeTotal, 330);
+  assert.equal(result.nightTotal, 90);
+});
+
+test("휴일 연장근무 표시 시간은 주간분만 보여주고 야간은 별도로 분리한다", () => {
+  const result = calculateEntry({
+    date: "2026-05-05",
+    start: "18:00",
+    end: "23:30"
+  });
+
+  assert.equal(result.error, "");
+  assert.equal(result.displayOvertimeMinutes, 240);
+  assert.equal(result.displayNightMinutes, 90);
+  assert.equal(result.holidayOvertimeMinutes, 240);
+  assert.equal(result.holidayNightMinutes, 90);
+});

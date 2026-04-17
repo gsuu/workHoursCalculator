@@ -1,5 +1,5 @@
 ﻿<script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import {
   parseMonthlyResultFiles,
@@ -10,6 +10,7 @@ import {
   PRELOADED_MONTHLY_PERIOD_LABEL,
   PRELOADED_MONTHLY_WORKERS
 } from "./preloadedMonthlyWorkers.js";
+import { getWorkTypeMeta, parseDateValue } from "./overtimeCalculator.js";
 
 function createFileStatus(file, state = "idle") {
   if (!file) {
@@ -56,6 +57,7 @@ const monthlyPeriodLabel = ref(PRELOADED_MONTHLY_PERIOD_LABEL);
 const previousCarryHoursMap = ref({});
 const selectedPart = ref("all");
 const selectedSort = ref("name");
+const selectedWorkerId = ref("");
 const copyToastMessage = ref("");
 const copyToastVisible = ref(false);
 const persistenceReady = ref(false);
@@ -130,6 +132,25 @@ const writeMonthlySnapshot = async (snapshot) => {
 };
 
 const formatMonthlyPeriodLabel = (year, month) => `${year}년 ${month}월`;
+const formatDailyMinutes = (minutes) => `${toPaddedText(Math.floor(Math.max(0, minutes) / 60))}시간 ${toPaddedText(Math.max(0, minutes) % 60)}분`;
+const getDisplayWorkModeLabel = (record) => {
+  const label = record.workModeLabel || "-";
+  if (!record?.date) return label;
+
+  const date = parseDateValue(record.date);
+  if (!date || Number.isNaN(date.getTime())) return label;
+  if (date.getDay() === 6) {
+    return "휴무일";
+  }
+
+  const autoLabel = getWorkTypeMeta(record.date)?.label || label;
+
+  if (!label || label === "평일") {
+    return autoLabel;
+  }
+
+  return label;
+};
 
 const updateImportStatus = (type, file, state = "idle") => {
   const nextStatus = createFileStatus(file, state);
@@ -428,6 +449,36 @@ const filteredMonthlyRows = computed(() => {
   }));
 });
 
+const selectedWorker = computed(() =>
+  monthlyRows.value.find((row) => row.employeeId === selectedWorkerId.value) ?? null
+);
+
+const selectedWorkerHeaderText = computed(() => {
+  if (!selectedWorker.value) return "";
+
+  const parts = [selectedWorker.value.name, monthlyPeriodLabel.value];
+  if (selectedWorker.value.scheduledShiftLabel) {
+    parts.push(`${selectedWorker.value.scheduledShiftLabel} 기준`);
+  }
+
+  return parts.join(" · ");
+});
+
+const selectedWorkerDailyRows = computed(() =>
+  (selectedWorker.value?.dailyRecords ?? []).map((record) => ({
+    ...record,
+    displayWorkModeLabel: getDisplayWorkModeLabel(record),
+    workModeText: record.halfLeaveLabel
+      ? `${getDisplayWorkModeLabel(record)}(${record.halfLeaveLabel})`
+      : getDisplayWorkModeLabel(record),
+    displayStart: record.recordedStart || record.start,
+    displayEnd: record.recordedEnd || record.end,
+    overtimeLabel: formatDailyMinutes(record.overtimeMinutes ?? 0),
+    nightLabel: formatDailyMinutes(record.nightMinutes ?? 0),
+    approvedLabel: record.hasApprovedOvertime ? "신청" : "미신청"
+  }))
+);
+
 const showRemarkColumn = computed(() =>
   filteredMonthlyRows.value.some((row) => Boolean(row.remarkText))
 );
@@ -555,6 +606,39 @@ const updateMonthlyFile = async (type, event) => {
 
   await validateMonthlyFile(type);
 };
+
+const openWorkerDetail = (employeeId) => {
+  selectedWorkerId.value = employeeId;
+};
+
+const closeWorkerDetail = () => {
+  selectedWorkerId.value = "";
+};
+
+let previousBodyOverflow = "";
+let previousBodyPaddingRight = "";
+
+watch(selectedWorkerId, (value) => {
+  if (typeof document === "undefined" || typeof window === "undefined") return;
+
+  if (value) {
+    previousBodyOverflow = document.body.style.overflow;
+    previousBodyPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+    document.body.style.overflow = "hidden";
+    document.body.style.paddingRight = scrollbarWidth > 0 ? `${scrollbarWidth}px` : previousBodyPaddingRight;
+    return;
+  }
+
+  document.body.style.overflow = previousBodyOverflow;
+  document.body.style.paddingRight = previousBodyPaddingRight;
+});
+
+onBeforeUnmount(() => {
+  if (typeof document === "undefined") return;
+  document.body.style.overflow = previousBodyOverflow;
+  document.body.style.paddingRight = previousBodyPaddingRight;
+});
 
 onMounted(async () => {
   try {
@@ -831,7 +915,11 @@ watch(
               <td class="cell-month">{{ monthlyPeriodLabel }}</td>
               <td>{{ row.number }}</td>
               <td class="cell-part">{{ row.part }}</td>
-              <td>{{ row.name }}</td>
+              <td>
+                <button class="name-button" type="button" @click="openWorkerDetail(row.employeeId)">
+                  {{ row.name }}
+                </button>
+              </td>
               <td class="cell-edit">
                 <input
                   class="table-input number"
@@ -860,6 +948,54 @@ watch(
         </table>
       </div>
     </section>
+
+    <div v-if="selectedWorker" class="worker-detail-backdrop" @click.self="closeWorkerDetail">
+      <section class="worker-detail-modal" role="dialog" aria-modal="true" :aria-label="`${selectedWorker.name} 상세 근무 내역`">
+        <div class="worker-detail-head">
+          <div>
+            <h3>{{ selectedWorkerHeaderText }}</h3>
+          </div>
+          <button class="worker-detail-close" type="button" aria-label="닫기" @click="closeWorkerDetail">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 4l8 8M12 4 4 12" />
+            </svg>
+          </button>
+        </div>
+        <div class="worker-detail-table-wrap">
+          <table class="worker-detail-table">
+            <thead>
+              <tr>
+                <th>날짜</th>
+                <th>근무기준</th>
+                <th>출근 시간</th>
+                <th>퇴근 시간</th>
+                <th>연장근무신청여부</th>
+                <th>연장근무 시간</th>
+                <th>야간근무시간</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="selectedWorkerDailyRows.length === 0">
+                <td colspan="7" class="worker-detail-empty">상세 근무 데이터가 없습니다.</td>
+              </tr>
+              <tr
+                v-for="record in selectedWorkerDailyRows"
+                :key="`${selectedWorker.employeeId}:${record.date}`"
+                :class="{ 'worker-detail-approved-row': !record.issueText && record.hasApprovedOvertime }"
+              >
+                <td class="worker-detail-date">{{ record.date }}</td>
+                <td>{{ record.workModeText }}</td>
+                <td>{{ record.displayStart || "-" }}</td>
+                <td>{{ record.displayEnd || "-" }}</td>
+                <td>{{ record.issueText ? "-" : record.approvedLabel }}</td>
+                <td>{{ record.issueText || record.overtimeLabel }}</td>
+                <td>{{ record.issueText || record.nightLabel }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
 
     <section class="panel">
       <div class="head">
@@ -1604,6 +1740,21 @@ h1 {
   background: #f1fbf2;
 }
 
+.name-button {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.name-button:hover,
+.name-button:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .monthly-table .cell-edit {
   background: #ffffff;
 }
@@ -1666,6 +1817,124 @@ h1 {
 
 .monthly-table .time-head {
   vertical-align: middle;
+}
+
+.worker-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(9, 9, 11, 0.28);
+}
+
+.worker-detail-modal {
+  width: min(900px, 100%);
+  max-height: min(80vh, 760px);
+  padding: 20px 20px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.16);
+}
+
+.worker-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.worker-detail-head h3 {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.worker-detail-head p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.worker-detail-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid #d9dbe2;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.worker-detail-close svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  fill: none;
+}
+
+.worker-detail-table-wrap {
+  max-height: calc(80vh - 120px);
+  overflow: auto;
+  margin-bottom: 30px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.worker-detail-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.worker-detail-table th,
+.worker-detail-table td {
+  padding: 10px 12px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.worker-detail-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fafafb;
+  font-weight: 700;
+}
+
+.worker-detail-table th:last-child,
+.worker-detail-table td:last-child {
+  border-right: none;
+}
+
+.worker-detail-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.worker-detail-approved-row td {
+  background: #fffdf4;
+}
+
+.worker-detail-empty {
+  color: var(--muted);
+}
+
+.worker-detail-date {
+  white-space: nowrap;
 }
 
 .guide-table {
@@ -1764,6 +2033,18 @@ h1 {
 @media (max-width: 900px) {
   .guide-row {
     grid-template-columns: 1fr;
+  }
+
+  .worker-detail-backdrop {
+    padding: 16px;
+  }
+
+  .worker-detail-modal {
+    padding: 16px;
+  }
+
+  .worker-detail-head {
+    flex-direction: column;
   }
 
   .transfer-shell {

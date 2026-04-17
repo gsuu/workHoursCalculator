@@ -188,8 +188,12 @@ export const buildIntervals = (start, end) => {
   ) {
     const nightStart = day * DAY_MINUTES + 1320;
     const nightEnd = day * DAY_MINUTES + 1800;
+    const lunchStart = day * DAY_MINUTES + LUNCH_START;
+    const lunchEnd = day * DAY_MINUTES + LUNCH_END;
     if (nightStart > start && nightStart < end) points.push(nightStart);
     if (nightEnd > start && nightEnd < end) points.push(nightEnd);
+    if (lunchStart > start && lunchStart < end) points.push(lunchStart);
+    if (lunchEnd > start && lunchEnd < end) points.push(lunchEnd);
   }
 
   const sorted = [...new Set(points)].sort((a, b) => a - b);
@@ -241,22 +245,17 @@ export const getLunchBreakState = (start, end) => {
 };
 
 export const applyBreak = (intervals, breakMinutes) => {
-  const adjusted = intervals.map((interval) => ({ ...interval }));
-  let remaining = breakMinutes;
-
-  for (const tag of ["day", "night"]) {
-    for (const interval of adjusted) {
-      if (remaining <= 0) break;
-      if (interval.tag !== tag) continue;
-
-      const length = interval.end - interval.start;
-      const used = Math.min(length, remaining);
-      interval.start += used;
-      remaining -= used;
-    }
+  if (breakMinutes <= 0) {
+    return intervals.map((interval) => ({ ...interval }));
   }
 
-  return adjusted.filter((interval) => interval.end > interval.start);
+  return intervals
+    .filter((interval) => {
+      const normalizedStart = ((interval.start % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
+      const normalizedEnd = ((interval.end % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
+      return !(normalizedStart === LUNCH_START && normalizedEnd === LUNCH_END);
+    })
+    .map((interval) => ({ ...interval }));
 };
 
 export const sumIntervals = (intervals) =>
@@ -295,6 +294,8 @@ export const classifyHoliday = (intervals) => {
     weekendHolidayWeighted: weighted,
     overtimeTotal: 0,
     nightTotal: nightWithin + nightOver,
+    displayOvertimeMinutes: dayWithin + dayOver,
+    displayNightMinutes: nightWithin + nightOver,
     holidayWorkMinutes: dayWithin + nightWithin + dayOver + nightOver,
     leaveGrantMinutes: weighted,
     holidayOvertimeMinutes: dayWithin + dayOver,
@@ -304,7 +305,116 @@ export const classifyHoliday = (intervals) => {
   };
 };
 
-export const classifyNormal = (intervals, priorWeekMinutes, mode) => {
+const buildScheduledWindows = (intervals, scheduledStartTime, scheduledEndTime) => {
+  const scheduledStartMinutes = toTimeMinutes(scheduledStartTime);
+  const scheduledEndMinutes = toTimeMinutes(scheduledEndTime);
+
+  if (scheduledStartMinutes == null || scheduledEndMinutes == null || !intervals.length) {
+    return [];
+  }
+
+  const firstStart = intervals[0].start;
+  const lastEnd = intervals[intervals.length - 1].end;
+  const windows = [];
+
+  for (
+    let day = Math.floor(firstStart / DAY_MINUTES);
+    day <= Math.floor(lastEnd / DAY_MINUTES) + 1;
+    day += 1
+  ) {
+    const start = day * DAY_MINUTES + scheduledStartMinutes;
+    const end = day * DAY_MINUTES + scheduledEndMinutes;
+    if (end <= start) continue;
+    windows.push({ start, end });
+  }
+
+  return windows;
+};
+
+const getWindowOverlapMinutes = (start, end, windows) =>
+  windows.reduce((total, window) => {
+    const overlapStart = Math.max(start, window.start);
+    const overlapEnd = Math.min(end, window.end);
+    return overlapEnd > overlapStart ? total + (overlapEnd - overlapStart) : total;
+  }, 0);
+
+const buildScheduledOvertimeWindows = (intervals, scheduledStartTime, scheduledEndTime) => {
+  const scheduledStartMinutes = toTimeMinutes(scheduledStartTime);
+  const scheduledEndMinutes = toTimeMinutes(scheduledEndTime);
+  if (scheduledStartMinutes == null || scheduledEndMinutes == null || !intervals.length) {
+    return [];
+  }
+
+  const firstStart = intervals[0].start;
+  const lastEnd = intervals[intervals.length - 1].end;
+  const windows = [];
+
+  for (
+    let day = Math.floor(firstStart / DAY_MINUTES);
+    day <= Math.floor(lastEnd / DAY_MINUTES) + 1;
+    day += 1
+  ) {
+    const start = day * DAY_MINUTES + scheduledEndMinutes;
+    const end = (day + 1) * DAY_MINUTES + scheduledStartMinutes;
+    if (end <= start) continue;
+    windows.push({ start, end });
+  }
+
+  return windows;
+};
+
+export const classifyNormal = (intervals, priorWeekMinutes, mode, scheduledRange = null) => {
+  if (
+    mode === "ordinary"
+    && scheduledRange?.start
+    && scheduledRange?.end
+  ) {
+    const regularWindows = buildScheduledWindows(intervals, scheduledRange.start, scheduledRange.end);
+    const overtimeWindows = buildScheduledOvertimeWindows(
+      intervals,
+      scheduledRange.start,
+      scheduledRange.end
+    );
+    let regularDay = 0;
+    let regularNight = 0;
+    let overtimeDay = 0;
+    let overtimeNight = 0;
+
+    intervals.forEach((interval) => {
+      const regular = getWindowOverlapMinutes(interval.start, interval.end, regularWindows);
+      const over = getWindowOverlapMinutes(interval.start, interval.end, overtimeWindows);
+
+      if (interval.tag === "night") {
+        regularNight += regular;
+        overtimeNight += over;
+      } else {
+        regularDay += regular;
+        overtimeDay += over;
+      }
+    });
+
+    const total = regularDay + regularNight + overtimeDay + overtimeNight;
+    const weighted = regularDay + (regularNight + overtimeDay) * 1.5 + overtimeNight * 2;
+
+    return {
+      total,
+      weighted,
+      weekday150: regularNight + overtimeDay,
+      weekday200: overtimeNight,
+      weekendHolidayWeighted: 0,
+      overtimeTotal: overtimeDay + overtimeNight,
+      nightTotal: regularNight + overtimeNight,
+      displayOvertimeMinutes: overtimeDay,
+      displayNightMinutes: regularNight + overtimeNight,
+      holidayWorkMinutes: 0,
+      leaveGrantMinutes: (regularNight + overtimeDay) * 1.5 + overtimeNight * 2,
+      holidayOvertimeMinutes: 0,
+      holidayNightMinutes: 0,
+      holidayOvertimeGrantMinutes: 0,
+      holidayNightGrantMinutes: 0
+    };
+  }
+
   const total = sumIntervals(intervals);
   const overtime = Math.min(
     total,
@@ -347,6 +457,8 @@ export const classifyNormal = (intervals, priorWeekMinutes, mode) => {
     weekendHolidayWeighted: mode === "ordinary" ? 0 : weighted,
     overtimeTotal: mode === "ordinary" ? overtimeDay + overtimeNight : 0,
     nightTotal: regularNight + overtimeNight,
+    displayOvertimeMinutes: mode === "ordinary" ? overtimeDay : regularDay + overtimeDay,
+    displayNightMinutes: regularNight + overtimeNight,
     holidayWorkMinutes: mode === "ordinary" ? 0 : total,
     leaveGrantMinutes: mode === "ordinary" ? ordinaryGrant : weighted,
     holidayOvertimeMinutes: mode === "ordinary" ? 0 : regularDay + overtimeDay,
@@ -369,6 +481,8 @@ export const calculateEntry = (entry, priorWeekMinutes = 0) => {
     weekendHolidayWeighted: 0,
     overtimeTotal: 0,
     nightTotal: 0,
+    displayOvertimeMinutes: 0,
+    displayNightMinutes: 0,
     holidayWorkMinutes: 0,
     leaveGrantMinutes: 0,
     holidayOvertimeMinutes: 0,
@@ -406,7 +520,10 @@ export const calculateEntry = (entry, priorWeekMinutes = 0) => {
     const result =
       meta.mode === "holiday"
         ? classifyHoliday(worked)
-        : classifyNormal(worked, priorWeekMinutes, meta.mode);
+        : classifyNormal(worked, priorWeekMinutes, meta.mode, {
+          start: entry.scheduledStartTime,
+          end: entry.scheduledEndTime
+        });
 
     return {
       error: "",
@@ -417,6 +534,8 @@ export const calculateEntry = (entry, priorWeekMinutes = 0) => {
       weekendHolidayWeighted: result.weekendHolidayWeighted,
       overtimeTotal: result.overtimeTotal,
       nightTotal: result.nightTotal,
+      displayOvertimeMinutes: result.displayOvertimeMinutes,
+      displayNightMinutes: result.displayNightMinutes,
       holidayWorkMinutes: result.holidayWorkMinutes,
       leaveGrantMinutes: result.leaveGrantMinutes,
       holidayOvertimeMinutes: result.holidayOvertimeMinutes,
