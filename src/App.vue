@@ -615,29 +615,62 @@ const closeWorkerDetail = () => {
   selectedWorkerId.value = "";
 };
 
-let previousBodyOverflow = "";
-let previousBodyPaddingRight = "";
+const isWorkerDetailScrollableTarget = (target) =>
+  target instanceof Element && Boolean(target.closest(".worker-detail-table-wrap"));
+
+const SCROLL_LOCK_KEYS = new Set([
+  "ArrowUp",
+  "ArrowDown",
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+  " ",
+  "Spacebar"
+]);
+
+const preventBackgroundWheel = (event) => {
+  if (!selectedWorkerId.value) return;
+  if (isWorkerDetailScrollableTarget(event.target)) return;
+  event.preventDefault();
+};
+
+const preventBackgroundTouchMove = (event) => {
+  if (!selectedWorkerId.value) return;
+  if (isWorkerDetailScrollableTarget(event.target)) return;
+  event.preventDefault();
+};
+
+const preventBackgroundKeyScroll = (event) => {
+  if (!selectedWorkerId.value) return;
+  if (!SCROLL_LOCK_KEYS.has(event.key)) return;
+  if (isWorkerDetailScrollableTarget(event.target)) return;
+  event.preventDefault();
+};
 
 watch(selectedWorkerId, (value) => {
   if (typeof document === "undefined" || typeof window === "undefined") return;
 
   if (value) {
-    previousBodyOverflow = document.body.style.overflow;
-    previousBodyPaddingRight = document.body.style.paddingRight;
-    const scrollbarWidth = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
-    document.body.style.overflow = "hidden";
-    document.body.style.paddingRight = scrollbarWidth > 0 ? `${scrollbarWidth}px` : previousBodyPaddingRight;
+    document.body.classList.add("modal-open");
+    window.addEventListener("wheel", preventBackgroundWheel, { passive: false, capture: true });
+    window.addEventListener("touchmove", preventBackgroundTouchMove, { passive: false, capture: true });
+    window.addEventListener("keydown", preventBackgroundKeyScroll, { capture: true });
     return;
   }
 
-  document.body.style.overflow = previousBodyOverflow;
-  document.body.style.paddingRight = previousBodyPaddingRight;
+  document.body.classList.remove("modal-open");
+  window.removeEventListener("wheel", preventBackgroundWheel, true);
+  window.removeEventListener("touchmove", preventBackgroundTouchMove, true);
+  window.removeEventListener("keydown", preventBackgroundKeyScroll, true);
 });
 
 onBeforeUnmount(() => {
-  if (typeof document === "undefined") return;
-  document.body.style.overflow = previousBodyOverflow;
-  document.body.style.paddingRight = previousBodyPaddingRight;
+  if (typeof document === "undefined" || typeof window === "undefined") return;
+  document.body.classList.remove("modal-open");
+  window.removeEventListener("wheel", preventBackgroundWheel, true);
+  window.removeEventListener("touchmove", preventBackgroundTouchMove, true);
+  window.removeEventListener("keydown", preventBackgroundKeyScroll, true);
 });
 
 onMounted(async () => {
@@ -1075,6 +1108,11 @@ body {
   font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
   background: #ffffff;
   color: var(--text);
+  overflow-y: scroll;
+}
+
+body.modal-open {
+  overscroll-behavior: none;
 }
 
 button,
@@ -1083,13 +1121,9 @@ input {
 }
 
 main {
-  width: min(1320px, calc(100% - 24px));
+  width: min(1320px, calc(100vw - 24px));
   margin: 20px auto 36px;
   display: block;
-}
-
-.panel + .panel {
-  margin-top: 60px;
 }
 
 .panel {
@@ -1102,6 +1136,10 @@ main {
 
 .hero {
   background: transparent;
+}
+
+.panel {
+  margin-top: 60px;
 }
 
 .hero + .panel {
@@ -1889,6 +1927,7 @@ h1 {
   margin-bottom: 30px;
   border: 1px solid var(--line);
   border-radius: 12px;
+  overscroll-behavior: contain;
 }
 
 .worker-detail-table {
