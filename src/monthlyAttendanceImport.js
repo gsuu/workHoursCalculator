@@ -42,6 +42,28 @@ const toRows = (arrayBuffer) => {
 
 const readFileRows = async (file) => file.arrayBuffer().then(toRows);
 
+const DETAIL_WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+
+const findMonthInfoInRows = (rows) => {
+  for (const row of rows) {
+    for (const cell of row ?? []) {
+      const text = normalizeText(cell);
+      if (!text) continue;
+
+      const compact = text.replace(/\s+/g, "");
+      const match = compact.match(/(\d{4})\D*(\d{1,2})/);
+      if (!match) continue;
+
+      return {
+        year: Number(match[1]),
+        month: Number(match[2])
+      };
+    }
+  }
+
+  throw new Error("월 정보를 확인할 수 없습니다.");
+};
+
 export const validateAttendanceRows = (rows) => {
   const headerRow = rows[0] ?? [];
   const labelRow = rows[3] ?? [];
@@ -58,21 +80,54 @@ export const validateAttendanceRows = (rows) => {
   if (!hasAttendanceHeader || !hasStartLabel || !hasMonthCell) {
     throw new Error("근태현황 파일 형식이 아닙니다.");
   }
+
+  return findMonthInfoInRows(rows.slice(0, 4));
 };
 
-export const validateDetailRows = (rows) => {
+export const validateDetailRows = (rows, monthInfo = null) => {
   const guideRows = rows.slice(0, 6).map((row) => normalizeText(row?.[0]));
-  const nameRow = rows[0] ?? [];
-  const idRow = rows[1] ?? [];
 
   const hasGuideTitle = guideRows.some((text) => text.includes("(안내)"));
   const hasDetailGuide = guideRows.some((text) => text.includes("연장근무"))
     && guideRows.some((text) => text.includes("야간근무"));
-  const hasEmployeeColumns = nameRow.some((cell) => hasText(cell))
-    && idRow.some((cell) => hasText(cell));
+  const hasDayRows = rows.some((row) => /^\d{1,2}/.test(normalizeText(row?.[0])));
 
-  if (!hasGuideTitle || !hasDetailGuide || !hasEmployeeColumns) {
+  if (!hasGuideTitle || !hasDetailGuide || !hasDayRows) {
     throw new Error("근무결과(상세) 파일 형식이 아닙니다.");
+  }
+
+  if (!monthInfo?.year || !monthInfo?.month) {
+    return;
+  }
+
+  let checkedDays = 0;
+
+  for (const row of rows) {
+    const firstCell = normalizeText(row?.[0]);
+    const match = firstCell.match(/^(\d{1,2})\((.)\)$/);
+    if (!match) continue;
+
+    const day = Number(match[1]);
+    const weekdayLabel = match[2];
+    const date = new Date(monthInfo.year, monthInfo.month - 1, day);
+
+    if (
+      date.getFullYear() !== monthInfo.year
+      || date.getMonth() !== monthInfo.month - 1
+      || date.getDate() !== day
+    ) {
+      throw new Error("근무결과(상세) 파일의 날짜 정보가 올바르지 않습니다.");
+    }
+
+    if (DETAIL_WEEKDAY_LABELS[date.getDay()] !== weekdayLabel) {
+      throw new Error("두 파일의 월 정보가 일치하지 않습니다.");
+    }
+
+    checkedDays += 1;
+  }
+
+  if (checkedDays === 0) {
+    throw new Error("근무결과(상세) 파일의 날짜 정보를 확인할 수 없습니다.");
   }
 };
 
@@ -311,8 +366,7 @@ export const hasApprovedOvertime = (detail) =>
   );
 
 const parseAttendanceRows = (rows) => {
-  validateAttendanceRows(rows);
-  const monthInfo = extractMonthInfo(rows[0]?.[8]);
+  const monthInfo = validateAttendanceRows(rows);
   const records = new Map();
 
   for (let rowIndex = 3; rowIndex < rows.length; rowIndex += 3) {
@@ -350,7 +404,13 @@ const parseAttendanceRows = (rows) => {
 };
 
 const parseDetailRows = (rows, monthInfo) => {
-  validateDetailRows(rows);
+  const detailMonthInfo = validateDetailRows(rows);
+  if (
+    detailMonthInfo.year !== monthInfo.year
+    || detailMonthInfo.month !== monthInfo.month
+  ) {
+    throw new Error("두 파일의 월 정보가 일치하지 않습니다.");
+  }
   const rules = new Map();
   const nameRow = rows[0] ?? [];
   const idRow = rows[1] ?? [];
@@ -435,6 +495,7 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
   ]);
 
   const attendance = parseAttendanceRows(attendanceRows);
+  validateDetailRows(detailRows, attendance.monthInfo);
   const detailRules = parseDetailRows(detailRows, attendance.monthInfo);
   const workerMap = new Map();
 
@@ -584,11 +645,14 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
 export const validateAttendanceFile = async (attendanceFile) => {
   if (!attendanceFile) return;
   const attendanceRows = await readFileRows(attendanceFile);
-  parseAttendanceRows(attendanceRows);
+  return {
+    monthInfo: validateAttendanceRows(attendanceRows)
+  };
 };
 
-export const validateDetailFile = async (detailFile) => {
+export const validateDetailFile = async (detailFile, attendanceMonthInfo = null) => {
   if (!detailFile) return;
   const detailRows = await readFileRows(detailFile);
-  parseDetailRows(detailRows, { year: 2000, month: 1 });
+  validateDetailRows(detailRows, attendanceMonthInfo);
+  return null;
 };

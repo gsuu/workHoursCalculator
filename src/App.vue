@@ -45,6 +45,7 @@ function createFileStatus(file, state = "idle") {
 
 const attendanceImportFile = ref(null);
 const detailImportFile = ref(null);
+const attendanceImportMonthInfo = ref(null);
 const monthlyImportLoading = ref(false);
 const monthlyImportError = ref("");
 const attendanceImportStatus = ref(createFileStatus(null));
@@ -430,6 +431,11 @@ const showRemarkColumn = computed(() =>
   filteredMonthlyRows.value.some((row) => Boolean(row.remarkText))
 );
 
+const canUploadDetailFile = computed(() =>
+  Boolean(attendanceImportFile.value)
+  && attendanceImportStatus.value.state === "valid"
+);
+
 const canApplyMonthlyFiles = computed(() =>
   Boolean(attendanceImportFile.value)
   && Boolean(detailImportFile.value)
@@ -460,20 +466,31 @@ const validateMonthlyFile = async (type) => {
   const file = type === "attendance" ? attendanceImportFile.value : detailImportFile.value;
   if (!file) {
     updateImportStatus(type, null);
+    if (type === "attendance") {
+      attendanceImportMonthInfo.value = null;
+      detailImportFile.value = null;
+      updateImportStatus("detail", null);
+    }
     return false;
   }
 
   try {
     if (type === "attendance") {
-      await validateAttendanceFile(file);
+      const result = await validateAttendanceFile(file);
+      attendanceImportMonthInfo.value = result?.monthInfo ?? null;
     } else {
-      await validateDetailFile(file);
+      await validateDetailFile(file, attendanceImportMonthInfo.value);
     }
 
     updateImportStatus(type, file, "valid");
     return true;
   } catch (error) {
     updateImportStatus(type, file, "invalid");
+    if (type === "attendance") {
+      attendanceImportMonthInfo.value = null;
+      detailImportFile.value = null;
+      updateImportStatus("detail", null);
+    }
     console.error(error);
     return false;
   }
@@ -670,7 +687,7 @@ watch(
                 </small>
               </label>
 
-              <label class="transfer-upload-row">
+              <label v-if="canUploadDetailFile" class="transfer-upload-row">
                 <span class="transfer-upload-label">근무결과(상세) 파일</span>
                 <input class="transfer-upload-input" type="file" accept=".xls,.xlsx" @change="updateMonthlyFile('detail', $event)">
                 <small :class="['transfer-upload-status', detailImportStatus.state]">
