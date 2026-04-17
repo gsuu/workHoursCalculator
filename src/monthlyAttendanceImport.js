@@ -190,6 +190,30 @@ const extractDetailEmployeeIds = (rows) => {
   return employeeIds;
 };
 
+const extractDetailEmployees = (rows) => {
+  const nameRow = rows[0] ?? [];
+  const idRow = rows[1] ?? [];
+  const partRow = rows[2] ?? [];
+  const employees = new Map();
+
+  for (
+    let columnIndex = DETAIL_GROUP_START_COLUMN;
+    columnIndex < nameRow.length;
+    columnIndex += DETAIL_GROUP_WIDTH
+  ) {
+    const employeeId = normalizeText(idRow[columnIndex]);
+    if (!employeeId) continue;
+
+    employees.set(employeeId, {
+      employeeId,
+      name: normalizeText(nameRow[columnIndex]),
+      part: normalizeText(partRow[columnIndex])
+    });
+  }
+
+  return employees;
+};
+
 const validateMatchingEmployeeIds = (attendanceEmployeeIds, detailEmployeeIds) => {
   if (!attendanceEmployeeIds?.size || !detailEmployeeIds?.size) {
     throw new Error("사용자 정보를 확인할 수 없습니다.");
@@ -436,6 +460,26 @@ export const hasApprovedOvertime = (detail) =>
     )
   );
 
+const createWorkerSummary = ({ employeeId, name = "", part = "" }) => ({
+  employeeId,
+  name,
+  part,
+  div: "",
+  rank: "",
+  nightMinutes: 0,
+  overtimeMinutes: 0,
+  holidayOvertimeMinutes: 0,
+  holidayNightMinutes: 0,
+  holidayWorkMinutes: 0,
+  holidayOvertimeGrantMinutes: 0,
+  holidayNightGrantMinutes: 0,
+  holidayGrantMinutes: 0,
+  leaveGrantMinutes: 0,
+  overtimeDayCount: 0,
+  issueCount: 0,
+  issueDates: []
+});
+
 const parseAttendanceRows = (rows) => {
   const monthInfo = validateAttendanceRows(rows);
   const employeeIds = extractAttendanceEmployeeIds(rows);
@@ -616,10 +660,17 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
   const attendance = parseAttendanceRows(attendanceRows);
   validateDetailRows(detailRows, attendance.monthInfo, detailGuideRows);
   validateMatchingEmployeeIds(attendance.employeeIds, extractDetailEmployeeIds(detailRows));
+  const detailEmployees = extractDetailEmployees(detailRows);
   const detailRules = parseValidatedDetailRows(detailRows, attendance.monthInfo, detailGuideRows);
-  const workerMap = new Map();
+  const workerMap = new Map(
+    [...detailEmployees.values()].map((employee) => [employee.employeeId, createWorkerSummary(employee)])
+  );
 
   for (const record of attendance.records.values()) {
+    if (!detailEmployees.has(record.employeeId)) {
+      continue;
+    }
+
     const detail = detailRules.get(`${record.employeeId}:${record.date}`) ?? null;
     const ruleText = detail?.ruleText ?? "";
     const workModeOverride = resolveWorkModeOverride(record.date, ruleText);
@@ -638,25 +689,11 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
       approvedNightMinutes: detail?.nightMinutes ?? 0,
       approvedHolidayMinutes: detail?.holidayMinutes ?? 0
     });
-    const current = workerMap.get(record.employeeId) ?? {
+    const current = workerMap.get(record.employeeId) ?? createWorkerSummary({
       employeeId: record.employeeId,
       name: record.name,
-      part: record.part,
-      div: "",
-      rank: "",
-      nightMinutes: 0,
-      overtimeMinutes: 0,
-      holidayOvertimeMinutes: 0,
-      holidayNightMinutes: 0,
-      holidayWorkMinutes: 0,
-      holidayOvertimeGrantMinutes: 0,
-      holidayNightGrantMinutes: 0,
-      holidayGrantMinutes: 0,
-      leaveGrantMinutes: 0,
-      overtimeDayCount: 0,
-      issueCount: 0,
-      issueDates: []
-    };
+      part: record.part
+    });
 
     if (
       shouldIgnoreUnapprovedRecord({

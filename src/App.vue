@@ -686,23 +686,32 @@ watch(
               <p class="transfer-kicker">파일 업로드</p>
               <p class="transfer-copy">로컬에 저장된 동일 형식 파일을 바로 업로드할 수 있습니다.</p>
             </div>
-            <div class="transfer-upload-list">
-              <label class="transfer-upload-row">
-                <span class="transfer-upload-label">근태현황 파일</span>
-                <input class="transfer-upload-input" type="file" accept=".xls,.xlsx" @change="updateMonthlyFile('attendance', $event)">
-                <small :class="['transfer-upload-status', attendanceImportStatus.state]">
-                  <span v-if="attendanceImportStatus.fileName" class="transfer-upload-file-name">{{ attendanceImportStatus.fileName }}</span><span class="transfer-upload-status-text">{{ attendanceImportStatus.statusText }}</span>
-                </small>
-              </label>
+              <div class="transfer-upload-list">
+                <label class="transfer-upload-row">
+                  <span class="transfer-upload-label">근태현황 파일</span>
+                  <input class="transfer-upload-input" type="file" accept=".xls,.xlsx" @change="updateMonthlyFile('attendance', $event)">
+                  <small :class="['transfer-upload-status', attendanceImportStatus.state]">
+                    <span v-if="attendanceImportStatus.fileName" class="transfer-upload-file-name">{{ attendanceImportStatus.fileName }}</span><span class="transfer-upload-status-text">{{ attendanceImportStatus.statusText }}</span>
+                  </small>
+                </label>
 
-              <label v-if="canUploadDetailFile" class="transfer-upload-row">
-                <span class="transfer-upload-label">근무결과(상세) 파일</span>
-                <input class="transfer-upload-input" type="file" accept=".xls,.xlsx" @change="updateMonthlyFile('detail', $event)">
-                <small :class="['transfer-upload-status', detailImportStatus.state]">
-                  <span v-if="detailImportStatus.fileName" class="transfer-upload-file-name">{{ detailImportStatus.fileName }}</span><span class="transfer-upload-status-text">{{ detailImportStatus.statusText }}</span>
-                </small>
-              </label>
-            </div>
+                <label :class="['transfer-upload-row', { 'is-disabled': !canUploadDetailFile }]">
+                  <span class="transfer-upload-label">근무결과(상세) 파일</span>
+                  <input
+                    class="transfer-upload-input"
+                    type="file"
+                    accept=".xls,.xlsx"
+                    :disabled="!canUploadDetailFile"
+                    @change="updateMonthlyFile('detail', $event)"
+                  >
+                  <small :class="['transfer-upload-status', detailImportStatus.state]">
+                    <span v-if="detailImportStatus.fileName" class="transfer-upload-file-name">{{ detailImportStatus.fileName }}</span><span class="transfer-upload-status-text">{{ detailImportStatus.statusText }}</span>
+                  </small>
+                </label>
+                <p v-if="!canUploadDetailFile" class="transfer-upload-help">
+                  먼저 근태현황 파일을 업로드해주세요.
+                </p>
+              </div>
             <div class="transfer-upload-actions">
               <button
                 class="download-action-button transfer-apply-button"
@@ -1276,12 +1285,23 @@ h1 {
   color: var(--muted);
 }
 
+.transfer-upload-row.is-disabled {
+  opacity: 0.72;
+}
+
 .transfer-upload-label {
   color: var(--text);
 }
 
 .transfer-upload-row small {
   grid-column: 2;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.transfer-upload-help {
+  margin: -2px 0 0 128px;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.4;
@@ -1337,6 +1357,20 @@ h1 {
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+}
+
+.transfer-upload-input:disabled {
+  cursor: not-allowed;
+  background: #f7f7f8;
+  color: #a1a1aa;
+}
+
+.transfer-upload-input:disabled::file-selector-button,
+.transfer-upload-input:disabled::-webkit-file-upload-button {
+  cursor: not-allowed;
+  background: #f4f4f5;
+  color: #a1a1aa;
+  border-color: #e4e4e7;
 }
 
 .table-input {
@@ -1733,6 +1767,10 @@ h1 {
 
   .transfer-upload-row small {
     grid-column: auto;
+  }
+
+  .transfer-upload-help {
+    margin-left: 0;
   }
 }
 
