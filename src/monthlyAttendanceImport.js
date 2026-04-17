@@ -110,6 +110,21 @@ export const validateAttendanceRows = (rows) => {
   return findMonthInfoInRows(rows.slice(0, 4));
 };
 
+const extractAttendanceEmployeeIds = (rows) => {
+  const employeeIds = new Set();
+
+  for (let rowIndex = 3; rowIndex < rows.length; rowIndex += 3) {
+    const row = rows[rowIndex] ?? [];
+    const name = normalizeText(row[0]);
+    const employeeId = normalizeText(row[1]);
+
+    if (!name || !employeeId) continue;
+    employeeIds.add(employeeId);
+  }
+
+  return employeeIds;
+};
+
 export const validateDetailRows = (rows, monthInfo = null, guideSourceRows = rows) => {
   const guideRows = guideSourceRows.slice(0, 6).map((row) => normalizeText(row?.[0]));
 
@@ -154,6 +169,36 @@ export const validateDetailRows = (rows, monthInfo = null, guideSourceRows = row
 
   if (checkedDays === 0) {
     throw new Error("근무결과(상세) 파일의 날짜 정보를 확인할 수 없습니다.");
+  }
+};
+
+const extractDetailEmployeeIds = (rows) => {
+  const nameRow = rows[0] ?? [];
+  const idRow = rows[1] ?? [];
+  const employeeIds = new Set();
+
+  for (
+    let columnIndex = DETAIL_GROUP_START_COLUMN;
+    columnIndex < nameRow.length;
+    columnIndex += DETAIL_GROUP_WIDTH
+  ) {
+    const employeeId = normalizeText(idRow[columnIndex]);
+    if (!employeeId) continue;
+    employeeIds.add(employeeId);
+  }
+
+  return employeeIds;
+};
+
+const validateMatchingEmployeeIds = (attendanceEmployeeIds, detailEmployeeIds) => {
+  if (!attendanceEmployeeIds?.size || !detailEmployeeIds?.size) {
+    throw new Error("사용자 정보를 확인할 수 없습니다.");
+  }
+
+  for (const employeeId of detailEmployeeIds) {
+    if (!attendanceEmployeeIds.has(employeeId)) {
+      throw new Error("파일간 사용자 정보가 일치하지 않습니다.");
+    }
   }
 };
 
@@ -393,6 +438,7 @@ export const hasApprovedOvertime = (detail) =>
 
 const parseAttendanceRows = (rows) => {
   const monthInfo = validateAttendanceRows(rows);
+  const employeeIds = extractAttendanceEmployeeIds(rows);
   const records = new Map();
 
   for (let rowIndex = 3; rowIndex < rows.length; rowIndex += 3) {
@@ -425,6 +471,7 @@ const parseAttendanceRows = (rows) => {
 
   return {
     monthInfo,
+    employeeIds,
     records
   };
 };
@@ -568,6 +615,7 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
 
   const attendance = parseAttendanceRows(attendanceRows);
   validateDetailRows(detailRows, attendance.monthInfo, detailGuideRows);
+  validateMatchingEmployeeIds(attendance.employeeIds, extractDetailEmployeeIds(detailRows));
   const detailRules = parseValidatedDetailRows(detailRows, attendance.monthInfo, detailGuideRows);
   const workerMap = new Map();
 
@@ -717,16 +765,25 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
 export const validateAttendanceFile = async (attendanceFile) => {
   if (!attendanceFile) return;
   const attendanceRows = await readFileRows(attendanceFile);
+  validateAttendanceRows(attendanceRows);
   return {
-    monthInfo: validateAttendanceRows(attendanceRows)
+    monthInfo: findMonthInfoInRows(attendanceRows.slice(0, 4)),
+    employeeIds: extractAttendanceEmployeeIds(attendanceRows)
   };
 };
 
-export const validateDetailFile = async (detailFile, attendanceMonthInfo = null) => {
+export const validateDetailFile = async (
+  detailFile,
+  attendanceMonthInfo = null,
+  attendanceEmployeeIds = null
+) => {
   if (!detailFile) return;
   const workbook = await readFileWorkbook(detailFile);
   const detailRows = pickDataRows(workbook);
   const detailGuideRows = pickGuideRows(workbook);
   validateDetailRows(detailRows, attendanceMonthInfo, detailGuideRows);
+  if (attendanceEmployeeIds) {
+    validateMatchingEmployeeIds(attendanceEmployeeIds, extractDetailEmployeeIds(detailRows));
+  }
   return null;
 };

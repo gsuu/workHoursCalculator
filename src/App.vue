@@ -46,6 +46,7 @@ function createFileStatus(file, state = "idle") {
 const attendanceImportFile = ref(null);
 const detailImportFile = ref(null);
 const attendanceImportMonthInfo = ref(null);
+const attendanceImportEmployeeIds = ref(null);
 const monthlyImportLoading = ref(false);
 const monthlyImportError = ref("");
 const attendanceImportStatus = ref(createFileStatus(null));
@@ -468,29 +469,36 @@ const validateMonthlyFile = async (type) => {
     updateImportStatus(type, null);
     if (type === "attendance") {
       attendanceImportMonthInfo.value = null;
+      attendanceImportEmployeeIds.value = null;
       detailImportFile.value = null;
       updateImportStatus("detail", null);
     }
     return false;
   }
 
-  try {
-    if (type === "attendance") {
-      const result = await validateAttendanceFile(file);
-      attendanceImportMonthInfo.value = result?.monthInfo ?? null;
-    } else {
-      await validateDetailFile(file, attendanceImportMonthInfo.value);
-    }
+    try {
+      if (type === "attendance") {
+        const result = await validateAttendanceFile(file);
+        attendanceImportMonthInfo.value = result?.monthInfo ?? null;
+        attendanceImportEmployeeIds.value = result?.employeeIds ?? null;
+      } else {
+        await validateDetailFile(
+          file,
+          attendanceImportMonthInfo.value,
+          attendanceImportEmployeeIds.value
+        );
+      }
 
     updateImportStatus(type, file, "valid");
     return true;
-  } catch (error) {
-    updateImportStatus(type, file, "invalid");
-    if (type === "attendance") {
-      attendanceImportMonthInfo.value = null;
-      detailImportFile.value = null;
-      updateImportStatus("detail", null);
-    }
+    } catch (error) {
+      updateImportStatus(type, file, "invalid");
+      if (type === "attendance") {
+        attendanceImportMonthInfo.value = null;
+        attendanceImportEmployeeIds.value = null;
+        detailImportFile.value = null;
+        updateImportStatus("detail", null);
+      }
     console.error(error);
     return false;
   }
