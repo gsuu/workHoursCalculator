@@ -7,6 +7,8 @@ import {
   inferScheduledEndTimeFromRule,
   inferScheduledStartTimeFromRule,
   isUnapprovedRangeInvalid,
+  validateAttendanceRows,
+  validateDetailRows,
   shouldIgnoreUnapprovedRecord,
   shouldUseScheduledRangeForUnapprovedRecord,
   resolveRecordedEndTime,
@@ -198,5 +200,35 @@ test("연장근무 일수는 상세표 승인값이 있을 때만 집계한다",
       holidayMinutes: 60
     }),
     true
+  );
+});
+
+test("근태현황 검증은 근무결과(상세) 형식 파일을 거부한다", () => {
+  const detailLikeRows = [
+    ["(안내)"],
+    ["- 연장근무: 정해진 소정근무시간을 초과하는 근무시간"],
+    ["- 야간근무: 오후 10시부터 다음 날 오전 6시 사이에 근무한 시간"],
+    [],
+    [],
+    []
+  ];
+
+  assert.throws(
+    () => validateAttendanceRows(detailLikeRows),
+    /근태현황 파일 형식이 아닙니다/
+  );
+});
+
+test("근무결과(상세) 검증은 근태현황 형식 파일을 거부한다", () => {
+  const attendanceLikeRows = [
+    ["이름", "사번", "소속", "", "", "", "", "", "2026년3월"],
+    ["", "", "", "", "", "", "", "", "1", "2"],
+    ["", "", "", "", "", "", "", "", "일", "월"],
+    ["홍길동", "CT0001", "UXUI", "", "", "", "", "출근", "09:00:00(O)", "09:00:00(O)"]
+  ];
+
+  assert.throws(
+    () => validateDetailRows(attendanceLikeRows),
+    /근무결과\(상세\) 파일 형식이 아닙니다/
   );
 });

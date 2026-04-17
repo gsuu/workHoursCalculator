@@ -11,12 +11,44 @@ import {
   PRELOADED_MONTHLY_WORKERS
 } from "./preloadedMonthlyWorkers.js";
 
+function createFileStatus(file, state = "idle") {
+  if (!file) {
+    return {
+      state: "idle",
+      fileName: "",
+      statusText: "선택된 파일이 없습니다."
+    };
+  }
+
+  if (state === "valid") {
+    return {
+      state,
+      fileName: file.name,
+      statusText: " ⭕"
+    };
+  }
+
+  if (state === "invalid") {
+    return {
+      state,
+      fileName: file.name,
+      statusText: " ✖️ 파일에 오류가 있습니다. 확인해주세요"
+    };
+  }
+
+  return {
+    state: "idle",
+    fileName: file.name,
+    statusText: ""
+  };
+}
+
 const attendanceImportFile = ref(null);
 const detailImportFile = ref(null);
 const monthlyImportLoading = ref(false);
 const monthlyImportError = ref("");
-const attendanceImportStatus = ref({ state: "idle", message: "" });
-const detailImportStatus = ref({ state: "idle", message: "" });
+const attendanceImportStatus = ref(createFileStatus(null));
+const detailImportStatus = ref(createFileStatus(null));
 const monthlyWorkers = ref(PRELOADED_MONTHLY_WORKERS);
 const monthlyPeriodLabel = ref(PRELOADED_MONTHLY_PERIOD_LABEL);
 const previousCarryHoursMap = ref({});
@@ -96,33 +128,6 @@ const writeMonthlySnapshot = async (snapshot) => {
 };
 
 const formatMonthlyPeriodLabel = (year, month) => `${year}년 ${month}월`;
-const createFileStatus = (file, state = "idle") => {
-  if (!file) {
-    return {
-      state: "idle",
-      message: "선택된 파일이 없습니다."
-    };
-  }
-
-  if (state === "valid") {
-    return {
-      state,
-      message: `${file.name} ⭕`
-    };
-  }
-
-  if (state === "invalid") {
-    return {
-      state,
-      message: `${file.name} ✖️ 파일에 오류가 있습니다. 확인해주세요`
-    };
-  }
-
-  return {
-    state: "idle",
-    message: file.name
-  };
-};
 
 const updateImportStatus = (type, file, state = "idle") => {
   const nextStatus = createFileStatus(file, state);
@@ -425,6 +430,14 @@ const showRemarkColumn = computed(() =>
   filteredMonthlyRows.value.some((row) => Boolean(row.remarkText))
 );
 
+const canApplyMonthlyFiles = computed(() =>
+  Boolean(attendanceImportFile.value)
+  && Boolean(detailImportFile.value)
+  && attendanceImportStatus.value.state !== "invalid"
+  && detailImportStatus.value.state !== "invalid"
+  && !monthlyImportLoading.value
+);
+
 const updateTextMap = (target, employeeId, value) => {
   target.value = {
     ...target.value,
@@ -443,41 +456,40 @@ const updateCarryHoursInput = (employeeId, value) => {
   updateTextMap(previousCarryHoursMap, employeeId, sanitizeDecimalInput(trimmed));
 };
 
-const loadMonthlyWorkers = async () => {
-  if (!attendanceImportFile.value && !detailImportFile.value) {
-    monthlyImportError.value = "";
-    updateImportStatus("attendance", null);
-    updateImportStatus("detail", null);
+const validateMonthlyFile = async (type) => {
+  const file = type === "attendance" ? attendanceImportFile.value : detailImportFile.value;
+  if (!file) {
+    updateImportStatus(type, null);
+    return false;
+  }
+
+  try {
+    if (type === "attendance") {
+      await validateAttendanceFile(file);
+    } else {
+      await validateDetailFile(file);
+    }
+
+    updateImportStatus(type, file, "valid");
+    return true;
+  } catch (error) {
+    updateImportStatus(type, file, "invalid");
+    console.error(error);
+    return false;
+  }
+};
+
+const applyMonthlyFiles = async () => {
+  if (!attendanceImportFile.value || !detailImportFile.value) {
     return;
   }
 
-  if (!attendanceImportFile.value || !detailImportFile.value) {
-    try {
-      if (attendanceImportFile.value) {
-        await validateAttendanceFile(attendanceImportFile.value);
-        updateImportStatus("attendance", attendanceImportFile.value, "valid");
-      } else {
-        updateImportStatus("attendance", null);
-      }
+  const [attendanceValid, detailValid] = await Promise.all([
+    validateMonthlyFile("attendance"),
+    validateMonthlyFile("detail")
+  ]);
 
-      if (detailImportFile.value) {
-        await validateDetailFile(detailImportFile.value);
-        updateImportStatus("detail", detailImportFile.value, "valid");
-      } else {
-        updateImportStatus("detail", null);
-      }
-
-      monthlyImportError.value = "";
-    } catch (error) {
-      if (attendanceImportFile.value) {
-        updateImportStatus("attendance", attendanceImportFile.value, "invalid");
-      }
-      if (detailImportFile.value) {
-        updateImportStatus("detail", detailImportFile.value, "invalid");
-      }
-      monthlyImportError.value = "";
-      console.error(error);
-    }
+  if (!attendanceValid || !detailValid) {
     return;
   }
 
@@ -498,9 +510,6 @@ const loadMonthlyWorkers = async () => {
     selectedPart.value = "all";
     selectedSort.value = "name";
   } catch (error) {
-    monthlyWorkers.value = [];
-    selectedPart.value = "all";
-    selectedSort.value = "name";
     updateImportStatus("attendance", attendanceImportFile.value, "invalid");
     updateImportStatus("detail", detailImportFile.value, "invalid");
     monthlyImportError.value = "";
@@ -519,7 +528,7 @@ const updateMonthlyFile = async (type, event) => {
     detailImportFile.value = file ?? null;
   }
 
-  await loadMonthlyWorkers();
+  await validateMonthlyFile(type);
 };
 
 onMounted(async () => {
@@ -656,14 +665,28 @@ watch(
               <label class="transfer-upload-row">
                 <span class="transfer-upload-label">근태현황 파일</span>
                 <input class="transfer-upload-input" type="file" accept=".xls,.xlsx" @change="updateMonthlyFile('attendance', $event)">
-                <small :class="['transfer-upload-status', attendanceImportStatus.state]">{{ attendanceImportStatus.message }}</small>
+                <small :class="['transfer-upload-status', attendanceImportStatus.state]">
+                  <span v-if="attendanceImportStatus.fileName" class="transfer-upload-file-name">{{ attendanceImportStatus.fileName }}</span><span class="transfer-upload-status-text">{{ attendanceImportStatus.statusText }}</span>
+                </small>
               </label>
 
               <label class="transfer-upload-row">
                 <span class="transfer-upload-label">근무결과(상세) 파일</span>
                 <input class="transfer-upload-input" type="file" accept=".xls,.xlsx" @change="updateMonthlyFile('detail', $event)">
-                <small :class="['transfer-upload-status', detailImportStatus.state]">{{ detailImportStatus.message }}</small>
+                <small :class="['transfer-upload-status', detailImportStatus.state]">
+                  <span v-if="detailImportStatus.fileName" class="transfer-upload-file-name">{{ detailImportStatus.fileName }}</span><span class="transfer-upload-status-text">{{ detailImportStatus.statusText }}</span>
+                </small>
               </label>
+            </div>
+            <div class="transfer-upload-actions">
+              <button
+                class="download-action-button transfer-apply-button"
+                type="button"
+                :disabled="!canApplyMonthlyFiles"
+                @click="applyMonthlyFiles"
+              >
+                적용하기
+              </button>
             </div>
           </section>
         </div>
@@ -1162,6 +1185,13 @@ h1 {
   background: #f4f5f7;
 }
 
+.download-action-button:disabled {
+  cursor: not-allowed;
+  color: #a1a1aa;
+  background: #f5f5f5;
+  border-color: #e4e4e7;
+}
+
 .download-action-button svg {
   width: 14px;
   height: 14px;
@@ -1181,6 +1211,15 @@ h1 {
 .transfer-upload-list {
   display: grid;
   gap: 10px;
+}
+
+.transfer-upload-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.transfer-apply-button {
+  min-width: 136px;
 }
 
 .upload-steps {
@@ -1229,6 +1268,15 @@ h1 {
 
 .transfer-upload-status.invalid {
   color: var(--danger);
+}
+
+.transfer-upload-file-name {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.transfer-upload-status-text {
+  font-weight: 400;
 }
 
 .transfer-upload-input,

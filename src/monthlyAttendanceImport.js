@@ -7,6 +7,7 @@ const DETAIL_GROUP_START_COLUMN = 1;
 const DETAIL_GROUP_WIDTH = 6;
 
 const normalizeText = (value) => String(value ?? "").trim();
+const hasText = (value) => normalizeText(value).length > 0;
 
 const pickDataRows = (workbook) => {
   let bestRows = [];
@@ -40,6 +41,40 @@ const toRows = (arrayBuffer) => {
 };
 
 const readFileRows = async (file) => file.arrayBuffer().then(toRows);
+
+export const validateAttendanceRows = (rows) => {
+  const headerRow = rows[0] ?? [];
+  const labelRow = rows[3] ?? [];
+
+  const hasAttendanceHeader = [
+    normalizeText(headerRow[0]),
+    normalizeText(headerRow[1]),
+    normalizeText(headerRow[2])
+  ].join("|") === "이름|사번|소속";
+
+  const hasStartLabel = normalizeText(labelRow[7]) === "출근";
+  const hasMonthCell = hasText(headerRow[8]);
+
+  if (!hasAttendanceHeader || !hasStartLabel || !hasMonthCell) {
+    throw new Error("근태현황 파일 형식이 아닙니다.");
+  }
+};
+
+export const validateDetailRows = (rows) => {
+  const guideRows = rows.slice(0, 6).map((row) => normalizeText(row?.[0]));
+  const nameRow = rows[0] ?? [];
+  const idRow = rows[1] ?? [];
+
+  const hasGuideTitle = guideRows.some((text) => text.includes("(안내)"));
+  const hasDetailGuide = guideRows.some((text) => text.includes("연장근무"))
+    && guideRows.some((text) => text.includes("야간근무"));
+  const hasEmployeeColumns = nameRow.some((cell) => hasText(cell))
+    && idRow.some((cell) => hasText(cell));
+
+  if (!hasGuideTitle || !hasDetailGuide || !hasEmployeeColumns) {
+    throw new Error("근무결과(상세) 파일 형식이 아닙니다.");
+  }
+};
 
 const extractMonthInfo = (value) => {
   const compact = normalizeText(value).replace(/\s+/g, "");
@@ -276,6 +311,7 @@ export const hasApprovedOvertime = (detail) =>
   );
 
 const parseAttendanceRows = (rows) => {
+  validateAttendanceRows(rows);
   const monthInfo = extractMonthInfo(rows[0]?.[8]);
   const records = new Map();
 
@@ -314,6 +350,7 @@ const parseAttendanceRows = (rows) => {
 };
 
 const parseDetailRows = (rows, monthInfo) => {
+  validateDetailRows(rows);
   const rules = new Map();
   const nameRow = rows[0] ?? [];
   const idRow = rows[1] ?? [];
