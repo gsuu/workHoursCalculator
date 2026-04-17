@@ -93,7 +93,21 @@ test("승인된 연장 또는 야간이 있으면 실제 출퇴근 시각을 유
       approvedNightMinutes: 0,
       approvedHolidayMinutes: 0
     }),
-    "20:00"
+    "19:00"
+  );
+});
+
+test("승인된 총 시간보다 실제 퇴근이 더 늦으면 계산은 승인 종료 시각까지만 반영한다", () => {
+  assert.equal(
+    resolveRecordedEndTime({
+      start: "09:09",
+      end: "23:35",
+      ruleText: "9시출근",
+      approvedOvertimeMinutes: 150,
+      approvedNightMinutes: 30,
+      approvedHolidayMinutes: 0
+    }),
+    "20:51"
   );
 });
 

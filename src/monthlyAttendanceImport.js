@@ -366,6 +366,43 @@ const getApprovedMinutes = ({
   approvedHolidayMinutes = 0
 }) => approvedOvertimeMinutes + approvedNightMinutes + approvedHolidayMinutes;
 
+const getEffectiveApprovedMinutes = ({
+  start,
+  scheduledStart,
+  approvedOvertimeMinutes = 0,
+  approvedNightMinutes = 0,
+  approvedHolidayMinutes = 0
+}) => {
+  const approvedMinutes = getApprovedMinutes({
+    approvedOvertimeMinutes,
+    approvedNightMinutes,
+    approvedHolidayMinutes
+  });
+
+  if (approvedMinutes <= 0) {
+    return 0;
+  }
+
+  const startMinutes = toTimeMinutes(start);
+  const scheduledStartMinutes = toTimeMinutes(scheduledStart);
+  if (startMinutes == null || scheduledStartMinutes == null) {
+    return approvedMinutes;
+  }
+
+  const tardyMinutes = Math.max(startMinutes - scheduledStartMinutes, 0);
+  return Math.max(approvedMinutes - tardyMinutes, 0);
+};
+
+const toPaddedTimeText = (value) => String(value).padStart(2, "0");
+
+const formatClockMinutes = (minutes) => {
+  const normalized = ((minutes % 1440) + 1440) % 1440;
+  return `${toPaddedTimeText(Math.floor(normalized / 60))}:${toPaddedTimeText(normalized % 60)}`;
+};
+
+const getAbsoluteEndMinutes = (startMinutes, endMinutes) =>
+  endMinutes <= startMinutes ? endMinutes + 1440 : endMinutes;
+
 export const shouldIgnoreUnapprovedRecord = ({
   start,
   end,
@@ -462,8 +499,11 @@ export const resolveRecordedEndTime = ({
   approvedNightMinutes = 0,
   approvedHolidayMinutes = 0
 }) => {
+  const scheduledStart = inferScheduledStartTimeFromRule(ruleText);
   const scheduledEnd = inferScheduledEndTimeFromRule(ruleText);
-  const approvedMinutes = getApprovedMinutes({
+  const approvedMinutes = getEffectiveApprovedMinutes({
+    start,
+    scheduledStart,
     approvedOvertimeMinutes,
     approvedNightMinutes,
     approvedHolidayMinutes
@@ -473,13 +513,25 @@ export const resolveRecordedEndTime = ({
     return scheduledEnd || inferDefaultEndTime(start);
   }
 
-  if (!scheduledEnd || approvedMinutes > 0) {
+  if (!scheduledEnd) {
     return end;
   }
 
+  const startMinutes = toTimeMinutes(start);
   const endMinutes = toTimeMinutes(end);
   const scheduledEndMinutes = toTimeMinutes(scheduledEnd);
-  if (endMinutes == null || scheduledEndMinutes == null) {
+  if (startMinutes == null || endMinutes == null || scheduledEndMinutes == null) {
+    return end;
+  }
+
+  if (approvedMinutes > 0) {
+    const actualEndMinutes = getAbsoluteEndMinutes(startMinutes, endMinutes);
+    const approvedEndMinutes = scheduledEndMinutes + approvedMinutes;
+
+    if (actualEndMinutes > approvedEndMinutes) {
+      return formatClockMinutes(approvedEndMinutes);
+    }
+
     return end;
   }
 
@@ -559,9 +611,14 @@ const createDailyRecord = ({
   end = "",
   recordedStart = "",
   recordedEnd = "",
+  scheduledStartTime = "",
+  scheduledEndTime = "",
   halfLeaveLabel = "",
   halfLeavePosition = "",
   hasApprovedOvertime = false,
+  approvedOvertimeMinutes = 0,
+  approvedNightMinutes = 0,
+  approvedHolidayMinutes = 0,
   overtimeMinutes = 0,
   nightMinutes = 0,
   issueText = ""
@@ -572,9 +629,14 @@ const createDailyRecord = ({
   end,
   recordedStart,
   recordedEnd,
+  scheduledStartTime,
+  scheduledEndTime,
   halfLeaveLabel,
   halfLeavePosition,
   hasApprovedOvertime,
+  approvedOvertimeMinutes,
+  approvedNightMinutes,
+  approvedHolidayMinutes,
   overtimeMinutes,
   nightMinutes,
   issueText
@@ -885,14 +947,17 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
       continue;
     }
 
-    const result = calculateEntry({
-      date: record.date,
-      start,
-      end,
-      workModeOverride,
-      scheduledStartTime,
-      scheduledEndTime
-    });
+      const result = calculateEntry({
+        date: record.date,
+        start,
+        end,
+        workModeOverride,
+        scheduledStartTime,
+        scheduledEndTime,
+        approvedOvertimeMinutes: detail?.overtimeMinutes ?? 0,
+        approvedNightMinutes: detail?.nightMinutes ?? 0,
+        approvedHolidayMinutes: detail?.holidayMinutes ?? 0
+      });
 
     if (result.error) {
       current.dailyRecords.push(createDailyRecord({
@@ -931,15 +996,19 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
       date: record.date,
       workModeLabel: result.workModeLabel,
       start,
-      end,
-      recordedStart: record.start,
-      recordedEnd: record.end,
-      halfLeaveLabel: record.halfLeaveLabel,
-      halfLeavePosition: record.halfLeavePosition,
-      hasApprovedOvertime: hasApprovedOvertime(detail),
-      overtimeMinutes: result.displayOvertimeMinutes,
-      nightMinutes: result.displayNightMinutes,
-      issueText: ""
+        end,
+        recordedStart: record.start,
+        recordedEnd: record.end,
+        scheduledEndTime,
+        halfLeaveLabel: record.halfLeaveLabel,
+        halfLeavePosition: record.halfLeavePosition,
+        hasApprovedOvertime: hasApprovedOvertime(detail),
+        approvedOvertimeMinutes: detail?.overtimeMinutes ?? 0,
+        approvedNightMinutes: detail?.nightMinutes ?? 0,
+        approvedHolidayMinutes: detail?.holidayMinutes ?? 0,
+        overtimeMinutes: result.displayOvertimeMinutes,
+        nightMinutes: result.displayNightMinutes,
+        issueText: ""
     }));
     if (hasApprovedOvertime(detail)) {
       current.overtimeDayCount += 1;

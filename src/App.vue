@@ -407,10 +407,12 @@ const partOptions = computed(() => {
     label: part
   }));
 
+  const sortedOptions = [...groupOptions, ...partItems]
+    .sort((left, right) => left.label.localeCompare(right.label, "en", { sensitivity: "base" }));
+
   return [
     { value: "all", label: "전체" },
-    ...groupOptions,
-    ...partItems
+    ...sortedOptions
   ];
 });
 
@@ -508,16 +510,16 @@ const selectedWorkerDailyRows = computed(() =>
   (selectedWorker.value?.dailyRecords ?? []).map((record) => ({
     ...record,
     displayWorkModeLabel: getDisplayWorkModeLabel(record),
-    workModeText: record.halfLeaveLabel
-      ? `${getDisplayWorkModeLabel(record)}(${record.halfLeaveLabel})`
-      : getDisplayWorkModeLabel(record),
-    displayStart: record.recordedStart || record.start,
-    displayEnd: record.recordedEnd || record.end,
-    overtimeLabel: formatDailyMinutes(record.overtimeMinutes ?? 0),
-    nightLabel: formatDailyMinutes(record.nightMinutes ?? 0),
-    approvedLabel: record.hasApprovedOvertime ? "신청" : "미신청"
-  }))
-);
+      workModeText: record.halfLeaveLabel
+        ? `${getDisplayWorkModeLabel(record)}(${record.halfLeaveLabel})`
+        : getDisplayWorkModeLabel(record),
+      displayStart: record.recordedStart || record.start,
+      displayEnd: record.recordedEnd || record.end,
+      overtimeLabel: formatDailyMinutes(record.overtimeMinutes ?? 0),
+      nightLabel: formatDailyMinutes(record.nightMinutes ?? 0),
+      approvedLabel: record.hasApprovedOvertime ? "신청" : "미신청"
+    }))
+  );
 
 const showRemarkColumn = computed(() =>
   filteredMonthlyRows.value.some((row) => Boolean(row.remarkText))
@@ -1039,8 +1041,8 @@ watch(
               <tr>
                 <th>날짜</th>
                 <th>근무기준</th>
-                <th>출근 시간</th>
-                <th>퇴근 시간</th>
+                  <th class="worker-detail-time-head">출근 시간</th>
+                  <th class="worker-detail-time-head">퇴근 시간</th>
                 <th>연장근무신청여부</th>
                 <th>연장근무 시간</th>
                 <th>야간근무시간</th>
@@ -1057,8 +1059,8 @@ watch(
               >
                 <td class="worker-detail-date">{{ record.date }}</td>
                 <td>{{ record.workModeText }}</td>
-                <td>{{ record.displayStart || "-" }}</td>
-                <td>{{ record.displayEnd || "-" }}</td>
+                  <td class="worker-detail-time-cell">{{ record.displayStart || "-" }}</td>
+                  <td class="worker-detail-time-cell">{{ record.displayEnd || "-" }}</td>
                 <td>{{ record.issueText ? "-" : record.approvedLabel }}</td>
                 <td>{{ record.issueText || record.overtimeLabel }}</td>
                 <td>{{ record.issueText || record.nightLabel }}</td>
@@ -2048,6 +2050,13 @@ h1 {
 }
 
 .worker-detail-date {
+  white-space: nowrap;
+}
+
+.worker-detail-time-head,
+.worker-detail-time-cell {
+  width: 92px;
+  min-width: 92px;
   white-space: nowrap;
 }
 

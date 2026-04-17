@@ -287,6 +287,10 @@ export const classifyHoliday = (intervals) => {
   const weighted = dayWithin * 1.5 + (nightWithin + dayOver) * 2 + nightOver * 2.5;
 
   return {
+    regularDayMinutes: dayWithin,
+    regularNightMinutes: nightWithin,
+    overtimeDayMinutes: dayOver,
+    overtimeNightMinutes: nightOver,
     total: dayWithin + nightWithin + dayOver + nightOver,
     weighted,
     weekday150: 0,
@@ -397,6 +401,10 @@ export const classifyNormal = (intervals, priorWeekMinutes, mode, scheduledRange
     const weighted = regularDay + (regularNight + overtimeDay) * 1.5 + overtimeNight * 2;
 
     return {
+      regularDayMinutes: regularDay,
+      regularNightMinutes: regularNight,
+      overtimeDayMinutes: overtimeDay,
+      overtimeNightMinutes: overtimeNight,
       total,
       weighted,
       weekday150: regularNight + overtimeDay,
@@ -450,6 +458,10 @@ export const classifyNormal = (intervals, priorWeekMinutes, mode, scheduledRange
     : regularDay * 1 + ordinaryGrant;
 
   return {
+    regularDayMinutes: regularDay,
+    regularNightMinutes: regularNight,
+    overtimeDayMinutes: overtimeDay,
+    overtimeNightMinutes: overtimeNight,
     total,
     weighted,
     weekday150: mode === "ordinary" ? regularNight + overtimeDay : 0,
@@ -465,6 +477,107 @@ export const classifyNormal = (intervals, priorWeekMinutes, mode, scheduledRange
     holidayNightMinutes: mode === "ordinary" ? 0 : regularNight + overtimeNight,
     holidayOvertimeGrantMinutes: mode === "ordinary" ? 0 : (regularDay + overtimeDay) * 1.5,
     holidayNightGrantMinutes: mode === "ordinary" ? 0 : (regularNight + overtimeNight) * 2
+  };
+};
+
+const getApprovedCappedEndMinutes = (entry, startMinutes, endMinutes) => {
+  const approvedTotalMinutes = Math.max(
+    0,
+    Math.trunc(entry.approvedOvertimeMinutes ?? 0)
+      + Math.trunc(entry.approvedNightMinutes ?? 0)
+      + Math.trunc(entry.approvedHolidayMinutes ?? 0)
+  );
+
+  if (approvedTotalMinutes <= 0) {
+    return endMinutes;
+  }
+
+  const scheduledEndMinutes = toTimeMinutes(entry.scheduledEndTime);
+  if (scheduledEndMinutes == null) {
+    return endMinutes;
+  }
+
+  const actualEndMinutes = endMinutes <= startMinutes ? endMinutes + 1440 : endMinutes;
+  const approvedEndMinutes = scheduledEndMinutes + approvedTotalMinutes;
+
+  return actualEndMinutes > approvedEndMinutes
+    ? approvedEndMinutes % 1440
+    : endMinutes;
+};
+
+const getEffectiveApprovedOrdinaryCaps = (entry) => {
+  const approvedOvertimeMinutes = Math.max(0, Math.trunc(entry.approvedOvertimeMinutes ?? 0));
+  const approvedNightMinutes = Math.max(0, Math.trunc(entry.approvedNightMinutes ?? 0));
+  const scheduledStartMinutes = toTimeMinutes(entry.scheduledStartTime);
+  const actualStartMinutes = toTimeMinutes(entry.start);
+
+  if (scheduledStartMinutes == null || actualStartMinutes == null) {
+    return {
+      overtimeMinutes: approvedOvertimeMinutes,
+      nightMinutes: approvedNightMinutes
+    };
+  }
+
+  let remainingTardyMinutes = Math.max(actualStartMinutes - scheduledStartMinutes, 0);
+  const effectiveOvertimeMinutes = Math.max(approvedOvertimeMinutes - remainingTardyMinutes, 0);
+  remainingTardyMinutes = Math.max(remainingTardyMinutes - approvedOvertimeMinutes, 0);
+  const effectiveNightMinutes = Math.max(approvedNightMinutes - remainingTardyMinutes, 0);
+
+  return {
+    overtimeMinutes: effectiveOvertimeMinutes,
+    nightMinutes: effectiveNightMinutes
+  };
+};
+
+const applyApprovedOrdinaryCap = (result, entry, mode) => {
+  if (mode !== "ordinary") {
+    return result;
+  }
+
+  const rawApprovedOvertimeMinutes = Math.max(0, Math.trunc(entry.approvedOvertimeMinutes ?? 0));
+  const rawApprovedNightMinutes = Math.max(0, Math.trunc(entry.approvedNightMinutes ?? 0));
+
+  if (rawApprovedOvertimeMinutes <= 0 && rawApprovedNightMinutes <= 0) {
+    return result;
+  }
+
+  const approvedCaps = getEffectiveApprovedOrdinaryCaps(entry);
+  const approvedOvertimeMinutes = approvedCaps.overtimeMinutes;
+  const approvedNightMinutes = approvedCaps.nightMinutes;
+
+  if (approvedOvertimeMinutes <= 0 && approvedNightMinutes <= 0) {
+    return {
+      ...result,
+      total: result.regularDayMinutes + result.regularNightMinutes,
+      weighted: result.regularDayMinutes + result.regularNightMinutes * 1.5,
+      weekday150: result.regularNightMinutes,
+      weekday200: 0,
+      overtimeTotal: 0,
+      nightTotal: result.regularNightMinutes,
+      displayOvertimeMinutes: 0,
+      displayNightMinutes: result.regularNightMinutes,
+      leaveGrantMinutes: result.regularNightMinutes * 1.5
+    };
+  }
+
+  const regularDayMinutes = result.regularDayMinutes ?? 0;
+  const regularNightMinutes = result.regularNightMinutes ?? 0;
+  const cappedOvertimeDayMinutes = Math.min(result.overtimeDayMinutes ?? 0, approvedOvertimeMinutes);
+  const cappedOvertimeNightMinutes = Math.min(result.overtimeNightMinutes ?? 0, approvedNightMinutes);
+  const total = regularDayMinutes + regularNightMinutes + cappedOvertimeDayMinutes + cappedOvertimeNightMinutes;
+  const weighted = regularDayMinutes + (regularNightMinutes + cappedOvertimeDayMinutes) * 1.5 + cappedOvertimeNightMinutes * 2;
+
+  return {
+    ...result,
+    total,
+    weighted,
+    weekday150: regularNightMinutes + cappedOvertimeDayMinutes,
+    weekday200: cappedOvertimeNightMinutes,
+    overtimeTotal: cappedOvertimeDayMinutes + cappedOvertimeNightMinutes,
+    nightTotal: regularNightMinutes + cappedOvertimeNightMinutes,
+    displayOvertimeMinutes: cappedOvertimeDayMinutes,
+    displayNightMinutes: regularNightMinutes + cappedOvertimeNightMinutes,
+    leaveGrantMinutes: (regularNightMinutes + cappedOvertimeDayMinutes) * 1.5 + cappedOvertimeNightMinutes * 2
   };
 };
 
@@ -499,7 +612,6 @@ export const calculateEntry = (entry, priorWeekMinutes = 0) => {
   try {
     const start = toTimeMinutes(entry.start);
     const end = toTimeMinutes(entry.end);
-    const lunchBreak = getLunchBreakState(start, end);
 
     if (!meta) throw new Error("날짜를 먼저 입력해 주세요.");
     if (start === null || end === null) {
@@ -509,7 +621,9 @@ export const calculateEntry = (entry, priorWeekMinutes = 0) => {
       throw new Error("출근과 퇴근 시간이 같을 수 없습니다.");
     }
 
-    const shift = getShiftWindow(start, end);
+    const cappedEnd = getApprovedCappedEndMinutes(entry, start, end);
+    const lunchBreak = getLunchBreakState(start, cappedEnd);
+    const shift = getShiftWindow(start, cappedEnd);
     const breakMinutes = getAutomaticBreakMinutes(shift.start, shift.end);
 
     if (breakMinutes > shift.raw) {
@@ -517,33 +631,34 @@ export const calculateEntry = (entry, priorWeekMinutes = 0) => {
     }
 
     const worked = applyBreak(buildIntervals(shift.start, shift.end), breakMinutes);
-    const result =
-      meta.mode === "holiday"
-        ? classifyHoliday(worked)
-        : classifyNormal(worked, priorWeekMinutes, meta.mode, {
-          start: entry.scheduledStartTime,
-          end: entry.scheduledEndTime
-        });
+      const result =
+        meta.mode === "holiday"
+          ? classifyHoliday(worked)
+          : classifyNormal(worked, priorWeekMinutes, meta.mode, {
+            start: entry.scheduledStartTime,
+            end: entry.scheduledEndTime
+          });
+      const cappedResult = applyApprovedOrdinaryCap(result, entry, meta.mode);
 
-    return {
-      error: "",
-      total: result.total,
-      weighted: result.weighted,
-      weekday150: result.weekday150,
-      weekday200: result.weekday200,
-      weekendHolidayWeighted: result.weekendHolidayWeighted,
-      overtimeTotal: result.overtimeTotal,
-      nightTotal: result.nightTotal,
-      displayOvertimeMinutes: result.displayOvertimeMinutes,
-      displayNightMinutes: result.displayNightMinutes,
-      holidayWorkMinutes: result.holidayWorkMinutes,
-      leaveGrantMinutes: result.leaveGrantMinutes,
-      holidayOvertimeMinutes: result.holidayOvertimeMinutes,
-      holidayNightMinutes: result.holidayNightMinutes,
-      holidayOvertimeGrantMinutes: result.holidayOvertimeGrantMinutes,
-      holidayNightGrantMinutes: result.holidayNightGrantMinutes,
-      workMode: meta.mode,
-      workModeLabel: meta.label,
+      return {
+        error: "",
+        total: cappedResult.total,
+        weighted: cappedResult.weighted,
+        weekday150: cappedResult.weekday150,
+        weekday200: cappedResult.weekday200,
+        weekendHolidayWeighted: cappedResult.weekendHolidayWeighted,
+        overtimeTotal: cappedResult.overtimeTotal,
+        nightTotal: cappedResult.nightTotal,
+        displayOvertimeMinutes: cappedResult.displayOvertimeMinutes,
+        displayNightMinutes: cappedResult.displayNightMinutes,
+        holidayWorkMinutes: cappedResult.holidayWorkMinutes,
+        leaveGrantMinutes: cappedResult.leaveGrantMinutes,
+        holidayOvertimeMinutes: cappedResult.holidayOvertimeMinutes,
+        holidayNightMinutes: cappedResult.holidayNightMinutes,
+        holidayOvertimeGrantMinutes: cappedResult.holidayOvertimeGrantMinutes,
+        holidayNightGrantMinutes: cappedResult.holidayNightGrantMinutes,
+        workMode: meta.mode,
+        workModeLabel: meta.label,
       workModeDescription: meta.description,
       lunchBreakApplied: lunchBreak.applied,
       lunchBreakLabel: lunchBreak.label
