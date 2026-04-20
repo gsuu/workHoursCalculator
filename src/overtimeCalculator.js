@@ -505,82 +505,6 @@ const getApprovedCappedEndMinutes = (entry, startMinutes, endMinutes) => {
     : endMinutes;
 };
 
-const getEffectiveApprovedOrdinaryCaps = (entry) => {
-  const approvedOvertimeMinutes = Math.max(0, Math.trunc(entry.approvedOvertimeMinutes ?? 0));
-  const approvedNightMinutes = Math.max(0, Math.trunc(entry.approvedNightMinutes ?? 0));
-  const scheduledStartMinutes = toTimeMinutes(entry.scheduledStartTime);
-  const actualStartMinutes = toTimeMinutes(entry.start);
-
-  if (scheduledStartMinutes == null || actualStartMinutes == null) {
-    return {
-      overtimeMinutes: approvedOvertimeMinutes,
-      nightMinutes: approvedNightMinutes
-    };
-  }
-
-  let remainingTardyMinutes = Math.max(actualStartMinutes - scheduledStartMinutes, 0);
-  const effectiveOvertimeMinutes = Math.max(approvedOvertimeMinutes - remainingTardyMinutes, 0);
-  remainingTardyMinutes = Math.max(remainingTardyMinutes - approvedOvertimeMinutes, 0);
-  const effectiveNightMinutes = Math.max(approvedNightMinutes - remainingTardyMinutes, 0);
-
-  return {
-    overtimeMinutes: effectiveOvertimeMinutes,
-    nightMinutes: effectiveNightMinutes
-  };
-};
-
-const applyApprovedOrdinaryCap = (result, entry, mode) => {
-  if (mode !== "ordinary") {
-    return result;
-  }
-
-  const rawApprovedOvertimeMinutes = Math.max(0, Math.trunc(entry.approvedOvertimeMinutes ?? 0));
-  const rawApprovedNightMinutes = Math.max(0, Math.trunc(entry.approvedNightMinutes ?? 0));
-
-  if (rawApprovedOvertimeMinutes <= 0 && rawApprovedNightMinutes <= 0) {
-    return result;
-  }
-
-  const approvedCaps = getEffectiveApprovedOrdinaryCaps(entry);
-  const approvedOvertimeMinutes = approvedCaps.overtimeMinutes;
-  const approvedNightMinutes = approvedCaps.nightMinutes;
-
-  if (approvedOvertimeMinutes <= 0 && approvedNightMinutes <= 0) {
-    return {
-      ...result,
-      total: result.regularDayMinutes + result.regularNightMinutes,
-      weighted: result.regularDayMinutes + result.regularNightMinutes * 1.5,
-      weekday150: result.regularNightMinutes,
-      weekday200: 0,
-      overtimeTotal: 0,
-      nightTotal: result.regularNightMinutes,
-      displayOvertimeMinutes: 0,
-      displayNightMinutes: result.regularNightMinutes,
-      leaveGrantMinutes: result.regularNightMinutes * 1.5
-    };
-  }
-
-  const regularDayMinutes = result.regularDayMinutes ?? 0;
-  const regularNightMinutes = result.regularNightMinutes ?? 0;
-  const cappedOvertimeDayMinutes = Math.min(result.overtimeDayMinutes ?? 0, approvedOvertimeMinutes);
-  const cappedOvertimeNightMinutes = Math.min(result.overtimeNightMinutes ?? 0, approvedNightMinutes);
-  const total = regularDayMinutes + regularNightMinutes + cappedOvertimeDayMinutes + cappedOvertimeNightMinutes;
-  const weighted = regularDayMinutes + (regularNightMinutes + cappedOvertimeDayMinutes) * 1.5 + cappedOvertimeNightMinutes * 2;
-
-  return {
-    ...result,
-    total,
-    weighted,
-    weekday150: regularNightMinutes + cappedOvertimeDayMinutes,
-    weekday200: cappedOvertimeNightMinutes,
-    overtimeTotal: cappedOvertimeDayMinutes + cappedOvertimeNightMinutes,
-    nightTotal: regularNightMinutes + cappedOvertimeNightMinutes,
-    displayOvertimeMinutes: cappedOvertimeDayMinutes,
-    displayNightMinutes: regularNightMinutes + cappedOvertimeNightMinutes,
-    leaveGrantMinutes: (regularNightMinutes + cappedOvertimeDayMinutes) * 1.5 + cappedOvertimeNightMinutes * 2
-  };
-};
-
 export const calculateEntry = (entry, priorWeekMinutes = 0) => {
   const meta = entry.workModeOverride
     ? getWorkTypeMetaByMode(entry.workModeOverride)
@@ -638,25 +562,24 @@ export const calculateEntry = (entry, priorWeekMinutes = 0) => {
             start: entry.scheduledStartTime,
             end: entry.scheduledEndTime
           });
-      const cappedResult = applyApprovedOrdinaryCap(result, entry, meta.mode);
 
       return {
         error: "",
-        total: cappedResult.total,
-        weighted: cappedResult.weighted,
-        weekday150: cappedResult.weekday150,
-        weekday200: cappedResult.weekday200,
-        weekendHolidayWeighted: cappedResult.weekendHolidayWeighted,
-        overtimeTotal: cappedResult.overtimeTotal,
-        nightTotal: cappedResult.nightTotal,
-        displayOvertimeMinutes: cappedResult.displayOvertimeMinutes,
-        displayNightMinutes: cappedResult.displayNightMinutes,
-        holidayWorkMinutes: cappedResult.holidayWorkMinutes,
-        leaveGrantMinutes: cappedResult.leaveGrantMinutes,
-        holidayOvertimeMinutes: cappedResult.holidayOvertimeMinutes,
-        holidayNightMinutes: cappedResult.holidayNightMinutes,
-        holidayOvertimeGrantMinutes: cappedResult.holidayOvertimeGrantMinutes,
-        holidayNightGrantMinutes: cappedResult.holidayNightGrantMinutes,
+        total: result.total,
+        weighted: result.weighted,
+        weekday150: result.weekday150,
+        weekday200: result.weekday200,
+        weekendHolidayWeighted: result.weekendHolidayWeighted,
+        overtimeTotal: result.overtimeTotal,
+        nightTotal: result.nightTotal,
+        displayOvertimeMinutes: result.displayOvertimeMinutes,
+        displayNightMinutes: result.displayNightMinutes,
+        holidayWorkMinutes: result.holidayWorkMinutes,
+        leaveGrantMinutes: result.leaveGrantMinutes,
+        holidayOvertimeMinutes: result.holidayOvertimeMinutes,
+        holidayNightMinutes: result.holidayNightMinutes,
+        holidayOvertimeGrantMinutes: result.holidayOvertimeGrantMinutes,
+        holidayNightGrantMinutes: result.holidayNightGrantMinutes,
         workMode: meta.mode,
         workModeLabel: meta.label,
       workModeDescription: meta.description,

@@ -107,7 +107,7 @@ test("승인된 총 시간보다 실제 퇴근이 더 늦으면 계산은 승인
       approvedNightMinutes: 30,
       approvedHolidayMinutes: 0
     }),
-    "20:51"
+    "21:00"
   );
 });
 

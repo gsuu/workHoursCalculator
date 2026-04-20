@@ -367,31 +367,14 @@ const getApprovedMinutes = ({
 }) => approvedOvertimeMinutes + approvedNightMinutes + approvedHolidayMinutes;
 
 const getEffectiveApprovedMinutes = ({
-  start,
-  scheduledStart,
   approvedOvertimeMinutes = 0,
   approvedNightMinutes = 0,
   approvedHolidayMinutes = 0
-}) => {
-  const approvedMinutes = getApprovedMinutes({
-    approvedOvertimeMinutes,
-    approvedNightMinutes,
-    approvedHolidayMinutes
-  });
-
-  if (approvedMinutes <= 0) {
-    return 0;
-  }
-
-  const startMinutes = toTimeMinutes(start);
-  const scheduledStartMinutes = toTimeMinutes(scheduledStart);
-  if (startMinutes == null || scheduledStartMinutes == null) {
-    return approvedMinutes;
-  }
-
-  const tardyMinutes = Math.max(startMinutes - scheduledStartMinutes, 0);
-  return Math.max(approvedMinutes - tardyMinutes, 0);
-};
+}) => getApprovedMinutes({
+  approvedOvertimeMinutes,
+  approvedNightMinutes,
+  approvedHolidayMinutes
+});
 
 const toPaddedTimeText = (value) => String(value).padStart(2, "0");
 
@@ -619,6 +602,10 @@ const createDailyRecord = ({
   approvedOvertimeMinutes = 0,
   approvedNightMinutes = 0,
   approvedHolidayMinutes = 0,
+  detailRuleText = "",
+  detailOvertimeMinutes = 0,
+  detailNightMinutes = 0,
+  detailHolidayMinutes = 0,
   overtimeMinutes = 0,
   nightMinutes = 0,
   issueText = ""
@@ -637,6 +624,10 @@ const createDailyRecord = ({
   approvedOvertimeMinutes,
   approvedNightMinutes,
   approvedHolidayMinutes,
+  detailRuleText,
+  detailOvertimeMinutes,
+  detailNightMinutes,
+  detailHolidayMinutes,
   overtimeMinutes,
   nightMinutes,
   issueText
@@ -999,6 +990,7 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
         end,
         recordedStart: record.start,
         recordedEnd: record.end,
+        scheduledStartTime,
         scheduledEndTime,
         halfLeaveLabel: record.halfLeaveLabel,
         halfLeavePosition: record.halfLeavePosition,
@@ -1006,6 +998,10 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
         approvedOvertimeMinutes: detail?.overtimeMinutes ?? 0,
         approvedNightMinutes: detail?.nightMinutes ?? 0,
         approvedHolidayMinutes: detail?.holidayMinutes ?? 0,
+        detailRuleText: ruleText,
+        detailOvertimeMinutes: detail?.overtimeMinutes ?? 0,
+        detailNightMinutes: detail?.nightMinutes ?? 0,
+        detailHolidayMinutes: detail?.holidayMinutes ?? 0,
         overtimeMinutes: result.displayOvertimeMinutes,
         nightMinutes: result.displayNightMinutes,
         issueText: ""

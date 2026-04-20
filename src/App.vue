@@ -133,6 +133,90 @@ const writeMonthlySnapshot = async (snapshot) => {
 
 const formatMonthlyPeriodLabel = (year, month) => `${year}년 ${month}월`;
 const formatDailyMinutes = (minutes) => `${toPaddedText(Math.floor(Math.max(0, minutes) / 60))}시간 ${toPaddedText(Math.max(0, minutes) % 60)}분`;
+const CLOCK_MINUTES_PER_DAY = 24 * 60;
+const NIGHT_START_MINUTES = 22 * 60;
+const toClockMinutes = (value) => {
+  const match = String(value ?? "").match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+
+  return hours * 60 + minutes;
+};
+const toAbsoluteEndMinutes = (startMinutes, endMinutes) =>
+  endMinutes <= startMinutes ? endMinutes + CLOCK_MINUTES_PER_DAY : endMinutes;
+const formatClockText = (minutes) => {
+  const normalized = ((minutes % CLOCK_MINUTES_PER_DAY) + CLOCK_MINUTES_PER_DAY) % CLOCK_MINUTES_PER_DAY;
+  return `${toPaddedText(Math.floor(normalized / 60))}:${toPaddedText(normalized % 60)}`;
+};
+const formatDetailSourceDuration = (minutes) => {
+  const safeMinutes = Math.max(0, Math.trunc(minutes ?? 0));
+  return `${toPaddedText(Math.floor(safeMinutes / 60))}:${toPaddedText(safeMinutes % 60)}:00`;
+};
+const getDetailSourceMinutes = (record) =>
+  (record.detailOvertimeMinutes ?? record.approvedOvertimeMinutes ?? 0)
+  + (record.detailNightMinutes ?? record.approvedNightMinutes ?? 0)
+  + (record.detailHolidayMinutes ?? record.approvedHolidayMinutes ?? 0);
+const getDetailSourceText = (record) => {
+  if (!record.hasApprovedOvertime) return "";
+
+  return `(${formatDetailSourceDuration(getDetailSourceMinutes(record))})`;
+};
+const getDetailRemarkSegments = (record) => {
+  const scheduledEndMinutes = toClockMinutes(record.scheduledEndTime);
+  const calculationEndMinutes = toClockMinutes(record.end);
+  if (scheduledEndMinutes == null || calculationEndMinutes == null) return "";
+
+  const absoluteEndMinutes = toAbsoluteEndMinutes(scheduledEndMinutes, calculationEndMinutes);
+  const segments = [];
+  if ((record.overtimeMinutes ?? 0) > 0) {
+    const overtimeEndMinutes = Math.min(absoluteEndMinutes, NIGHT_START_MINUTES);
+    if (overtimeEndMinutes > scheduledEndMinutes) {
+      segments.push(`${formatClockText(scheduledEndMinutes)}~${formatClockText(overtimeEndMinutes)} 연장`);
+    }
+  }
+  if ((record.nightMinutes ?? 0) > 0) {
+    const nightStartMinutes = Math.max(scheduledEndMinutes, NIGHT_START_MINUTES);
+    if (absoluteEndMinutes > nightStartMinutes) {
+      segments.push(`${formatClockText(nightStartMinutes)}~${formatClockText(absoluteEndMinutes)} 야간`);
+    }
+  }
+
+  return segments.join(", ");
+};
+const getDailyRemarkText = (record) => {
+  if (record.issueText) return record.issueText;
+  if (!record.hasApprovedOvertime) return "";
+
+  const sourceMinutes = getDetailSourceMinutes(record);
+  const calculatedMinutes = (record.overtimeMinutes ?? 0) + (record.nightMinutes ?? 0);
+  if (sourceMinutes <= 0) return "";
+
+  const remarks = [];
+  const actualEndText = record.recordedEnd || record.end || "";
+  if (calculatedMinutes < sourceMinutes && actualEndText) {
+    remarks.push(`승인시간 ${formatDetailSourceDuration(sourceMinutes)} 중 실제 퇴근 ${actualEndText} 기준 ${formatDetailSourceDuration(calculatedMinutes)}만 계산`);
+  }
+
+  const scheduledEndMinutes = toClockMinutes(record.scheduledEndTime);
+  const actualEndMinutes = toClockMinutes(actualEndText);
+  if (scheduledEndMinutes != null && actualEndMinutes != null) {
+    const absoluteActualEndMinutes = toAbsoluteEndMinutes(scheduledEndMinutes, actualEndMinutes);
+    const approvedEndMinutes = scheduledEndMinutes + sourceMinutes;
+    if (absoluteActualEndMinutes > approvedEndMinutes) {
+      remarks.push(`승인 종료 ${formatClockText(approvedEndMinutes)}까지만 계산`);
+    }
+  }
+
+  const segmentsText = getDetailRemarkSegments(record);
+  if (segmentsText && (remarks.length > 0 || calculatedMinutes !== sourceMinutes)) {
+    remarks.push(segmentsText);
+  }
+
+  return remarks.join(" · ");
+};
 const getDisplayWorkModeLabel = (record) => {
   const label = record.workModeLabel || "-";
   if (!record?.date) return label;
@@ -517,7 +601,9 @@ const selectedWorkerDailyRows = computed(() =>
       displayEnd: record.recordedEnd || record.end,
       overtimeLabel: formatDailyMinutes(record.overtimeMinutes ?? 0),
       nightLabel: formatDailyMinutes(record.nightMinutes ?? 0),
-      approvedLabel: record.hasApprovedOvertime ? "신청" : "미신청"
+      approvedLabel: record.hasApprovedOvertime ? "신청" : "미신청",
+      detailSourceText: getDetailSourceText(record),
+      dailyRemarkText: getDailyRemarkText(record)
     }))
   );
 
@@ -1043,14 +1129,15 @@ watch(
                 <th>근무기준</th>
                   <th class="worker-detail-time-head">출근 시간</th>
                   <th class="worker-detail-time-head">퇴근 시간</th>
-                <th>연장근무신청여부</th>
+                <th class="worker-detail-approval-head">연장근무신청여부 (승인 된 시간)</th>
                 <th>연장근무 시간</th>
                 <th>야간근무시간</th>
+                <th class="worker-detail-remark-head">비고</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="selectedWorkerDailyRows.length === 0">
-                <td colspan="7" class="worker-detail-empty">상세 근무 데이터가 없습니다.</td>
+                <td colspan="8" class="worker-detail-empty">상세 근무 데이터가 없습니다.</td>
               </tr>
               <tr
                 v-for="record in selectedWorkerDailyRows"
@@ -1061,9 +1148,15 @@ watch(
                 <td>{{ record.workModeText }}</td>
                   <td class="worker-detail-time-cell">{{ record.displayStart || "-" }}</td>
                   <td class="worker-detail-time-cell">{{ record.displayEnd || "-" }}</td>
-                <td>{{ record.issueText ? "-" : record.approvedLabel }}</td>
+                <td class="worker-detail-approval-cell">
+                  <span>{{ record.issueText ? "-" : record.approvedLabel }}</span>
+                  <span v-if="!record.issueText && record.detailSourceText" class="worker-detail-source">
+                    {{ record.detailSourceText }}
+                  </span>
+                </td>
                 <td>{{ record.issueText || record.overtimeLabel }}</td>
                 <td>{{ record.issueText || record.nightLabel }}</td>
+                <td class="worker-detail-remark-cell">{{ record.dailyRemarkText || "-" }}</td>
               </tr>
             </tbody>
           </table>
@@ -1946,7 +2039,7 @@ h1 {
 }
 
 .worker-detail-modal {
-  width: min(900px, 100%);
+  width: min(1120px, 100%);
   max-height: min(80vh, 760px);
   padding: 20px 20px 16px;
   border: 1px solid #e5e7eb;
@@ -2058,6 +2151,34 @@ h1 {
   width: 92px;
   min-width: 92px;
   white-space: nowrap;
+}
+
+.worker-detail-approval-head,
+.worker-detail-approval-cell {
+  width: 210px;
+}
+
+.worker-detail-remark-head,
+.worker-detail-remark-cell {
+  width: 270px;
+}
+
+.worker-detail-source {
+  display: inline;
+  margin-left: 4px;
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  word-break: keep-all;
+}
+
+.worker-detail-remark-cell {
+  color: #4b5563;
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: left;
+  word-break: keep-all;
 }
 
 .guide-table {
