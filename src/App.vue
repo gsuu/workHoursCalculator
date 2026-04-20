@@ -120,10 +120,12 @@ const writeMonthlySnapshot = async (snapshot) => {
   const database = await openMonthlyDb();
   if (!database) return;
 
+  const plainSnapshot = JSON.parse(JSON.stringify(snapshot));
+
   await new Promise((resolve, reject) => {
     const transaction = database.transaction(MONTHLY_STORE_NAME, "readwrite");
     const store = transaction.objectStore(MONTHLY_STORE_NAME);
-    const request = store.put(snapshot, MONTHLY_SNAPSHOT_KEY);
+    const request = store.put(plainSnapshot, MONTHLY_SNAPSHOT_KEY);
 
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error ?? new Error("결과 저장에 실패했습니다."));
