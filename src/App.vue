@@ -1386,14 +1386,15 @@ main {
 
 .head .manual-upload-toggle {
   margin-top: 8px;
+  margin-bottom: 20px;
 }
 
 .manual-upload-collapse {
-  margin-top: 16px;
   padding-top: 16px;
   border-top: 1px dashed #e2e4e8;
   display: grid;
   gap: 16px;
+  margin-bottom: 8px;
 }
 
 .hero-copy {
