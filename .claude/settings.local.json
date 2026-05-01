@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(gh pr *)",
-      "Read(//opt/homebrew/bin/**)",
-      "Bash(export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\")"
-    ]
-  }
-}
