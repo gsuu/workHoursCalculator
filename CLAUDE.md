@@ -29,7 +29,11 @@ The Windows scheduled-task pipeline (`scripts/update-preloaded-monthly.ps1`, `re
 
 ### Cloud automation (GitHub Actions)
 
-`.github/workflows/monthly-update.yml` runs the same pipeline on a schedule (매월 1일 09:00 KST) without needing a Windows PC. It uses `scripts/fetch-hiworks-work-month.mjs` to log into Hiworks programmatically (`POST auth-api.office.hiworks.com/office-web/login` with `{ id, password, ip_security_level: "1" }`), download the two Excel files via `hr-work-api.../v4/excel/export/work-month`, then generate / commit / build / deploy. Required GitHub Secrets:
+Two workflows split data automation from build/deploy:
+- `.github/workflows/monthly-update.yml` — schedule (매월 1일 09:00 KST). Uses `scripts/fetch-hiworks-work-month.mjs` to log into Hiworks programmatically (`POST auth-api.office.hiworks.com/office-web/login` with `{ id, password, ip_security_level: "1" }`), download the two Excel files via `hr-work-api.../v4/excel/export/work-month`, then generate / test / commit to main. **Does NOT push gh-pages directly** — that's handled by deploy.yml downstream.
+- `.github/workflows/deploy.yml` — push trigger on main (paths: src/**, vite.config.js, etc.). Builds `dist/` and force-syncs into gh-pages branch. Any merge to main that touches the bundled code flows to the live site automatically. Also has workflow_dispatch for manual redeploys.
+
+Required GitHub Secrets (for monthly-update only):
 
 - `HIWORKS_ID`, `HIWORKS_PW` — service account credentials (use a dedicated read-only account; 2FA must be off for that account, otherwise programmatic login fails)
 - `HIWORKS_NODE_ID` — defaults to `12344` if unset
