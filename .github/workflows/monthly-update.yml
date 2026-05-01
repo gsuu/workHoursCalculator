@@ -1,0 +1,159 @@
+name: 월별 자동 업데이트
+
+on:
+  schedule:
+    # 매월 1일 09:00 KST (= 00:00 UTC). GH Actions 스케줄러는 부하에 따라 지연될 수 있음.
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "년도 (생략 시 전월 자동)"
+        required: false
+        type: string
+      month:
+        description: "월 (생략 시 전월 자동)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: monthly-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fetch Hiworks Excel
+        env:
+          HIWORKS_ID: ${{ secrets.HIWORKS_ID }}
+          HIWORKS_PW: ${{ secrets.HIWORKS_PW }}
+          HIWORKS_NODE_ID: ${{ secrets.HIWORKS_NODE_ID }}
+          HIWORKS_DOMAIN: ${{ secrets.HIWORKS_DOMAIN }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.year }}" ]; then ARGS="$ARGS --year ${{ inputs.year }}"; fi
+          if [ -n "${{ inputs.month }}" ]; then ARGS="$ARGS --month ${{ inputs.month }}"; fi
+          node scripts/fetch-hiworks-work-month.mjs --out-dir ./tmp-hiworks $ARGS
+
+      - name: Generate preloaded data
+        id: generate
+        run: |
+          ATT=$(ls ./tmp-hiworks/근태현황_*.xls | head -1)
+          DET=$(ls ./tmp-hiworks/근무결과\(상세\)_*.xls | head -1)
+          if [ -z "$ATT" ] || [ -z "$DET" ]; then
+            echo "다운로드된 파일을 찾을 수 없습니다." >&2
+            exit 1
+          fi
+          node scripts/generate-preloaded-monthly.mjs --attendance "$ATT" --detail "$DET"
+          PERIOD=$(node -e "import('./src/preloadedMonthlyWorkers.js').then(m => process.stdout.write(m.PRELOADED_MONTHLY_PERIOD_LABEL))")
+          echo "period=$PERIOD" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit data update to main
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet src/preloadedMonthlyWorkers.js; then
+            echo "변경사항 없음 — skip"
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git add src/preloadedMonthlyWorkers.js
+          git commit -m "chore: 사전 결과표 자동 갱신 (${{ steps.generate.outputs.period }})"
+          git push origin main
+          echo "skipped=false" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy dist to gh-pages
+        if: steps.commit.outputs.skipped != 'true'
+        run: |
+          git fetch origin gh-pages
+          GH_TREE=$(mktemp -d)
+          git worktree add "$GH_TREE" gh-pages
+          rm -rf "$GH_TREE/assets"
+          cp -R dist/assets "$GH_TREE/assets"
+          cp dist/index.html "$GH_TREE/index.html"
+          cp dist/favicon.ico "$GH_TREE/favicon.ico"
+          cp dist/robots.txt "$GH_TREE/robots.txt"
+          cd "$GH_TREE"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "gh-pages에 적용할 변경사항 없음"
+            exit 0
+          fi
+          git commit -m "chore: 자동 배포 (${{ steps.generate.outputs.period }})"
+          git push origin gh-pages
+
+      - name: Cleanup downloads
+        if: always()
+        run: rm -rf ./tmp-hiworks
+
+      - name: Notify by email on failure
+        if: failure()
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_TO: jisuk@cttd.co.kr
+          RUN_URL: ${{ format('{0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
+        run: |
+          if [ -z "$SMTP_HOST" ] || [ -z "$SMTP_USER" ] || [ -z "$SMTP_PASS" ]; then
+            echo "SMTP secrets 미설정 — 이메일 알림 생략"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import os, smtplib, ssl
+          from email.message import EmailMessage
+
+          msg = EmailMessage()
+          msg["Subject"] = "[workHoursCalculator] 월별 자동 업데이트 실패"
+          msg["From"] = os.environ["SMTP_USER"]
+          msg["To"] = os.environ["MAIL_TO"]
+          msg.set_content(
+              "워크플로우가 실패했습니다.\n\n"
+              f"Run: {os.environ['RUN_URL']}\n"
+          )
+
+          host = os.environ["SMTP_HOST"]
+          port = int(os.environ.get("SMTP_PORT") or "465")
+          user = os.environ["SMTP_USER"]
+          password = os.environ["SMTP_PASS"]
+          ctx = ssl.create_default_context()
+
+          if port == 465:
+              with smtplib.SMTP_SSL(host, port, context=ctx) as smtp:
+                  smtp.login(user, password)
+                  smtp.send_message(msg)
+          else:
+              with smtplib.SMTP(host, port) as smtp:
+                  smtp.starttls(context=ctx)
+                  smtp.login(user, password)
+                  smtp.send_message(msg)
+
+          print(f"이메일 발송 완료 → {os.environ['MAIL_TO']}")
+          PY

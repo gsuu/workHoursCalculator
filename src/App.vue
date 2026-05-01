@@ -7,6 +7,7 @@ import {
   validateDetailFile
 } from "./monthlyAttendanceImport.js";
 import {
+  PRELOADED_MONTHLY_DATASETS,
   PRELOADED_MONTHLY_PERIOD_LABEL,
   PRELOADED_MONTHLY_WORKERS
 } from "./preloadedMonthlyWorkers.js";
@@ -61,6 +62,27 @@ const selectedWorkerId = ref("");
 const copyToastMessage = ref("");
 const copyToastVisible = ref(false);
 const persistenceReady = ref(false);
+
+const preloadedMonthOptions = computed(() =>
+  [...PRELOADED_MONTHLY_DATASETS]
+    .sort((left, right) => {
+      const leftYear = left.monthInfo?.year ?? 0;
+      const rightYear = right.monthInfo?.year ?? 0;
+      if (leftYear !== rightYear) return rightYear - leftYear;
+      return (right.monthInfo?.month ?? 0) - (left.monthInfo?.month ?? 0);
+    })
+    .map((dataset) => ({ value: dataset.periodLabel, label: dataset.periodLabel }))
+);
+
+const selectPreloadedMonth = (periodLabel) => {
+  const dataset = PRELOADED_MONTHLY_DATASETS.find((entry) => entry.periodLabel === periodLabel);
+  if (!dataset) return;
+  monthlyWorkers.value = dataset.workers;
+  monthlyPeriodLabel.value = dataset.periodLabel;
+  selectedPart.value = "all";
+  selectedSort.value = "name";
+  selectedWorkerId.value = "";
+};
 
 const HIWORKS_EXPORT_BASE_URL = "https://hr-work-api.office.hiworks.com/v4/excel/export/work-month";
 const HIWORKS_NODE_ID = "12344";
@@ -461,11 +483,12 @@ const formatIssueDates = (issueDates) => {
 };
 
 const normalizeText = (value) => String(value ?? "").trim().replace(/\s+/g, " ");
+const SUBTEAM_SUFFIX_RE = /\s+(?:\d+|div|Design)$/i;
 const getPartGroup = (part) => {
   const normalized = normalizeText(part);
   if (!normalized) return "";
 
-  const grouped = normalized.replace(/\s+\d+$/, "");
+  const grouped = normalized.replace(SUBTEAM_SUFFIX_RE, "");
   return grouped || normalized;
 };
 
@@ -484,7 +507,7 @@ const partOptions = computed(() => {
     .filter(([, count]) => count > 1)
     .map(([group]) => ({
       value: `group:${group}`,
-      label: group
+      label: `${group} (전체)`
     }))
     .sort((left, right) => left.label.localeCompare(right.label, "en", { sensitivity: "base" }));
 
@@ -985,6 +1008,32 @@ watch(
       </div>
       <div class="table-toolbar">
         <div class="table-filters">
+          <label v-if="preloadedMonthOptions.length > 1" class="table-filter">
+            <span class="table-filter-label">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3 2.5v2m10-2v2M2.5 6.5h11M3 4.5h10a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5V5a.5.5 0 0 1 .5-.5z" />
+              </svg>
+              <span>월</span>
+            </span>
+            <select
+              :value="monthlyPeriodLabel"
+              @change="selectPreloadedMonth($event.target.value)"
+            >
+              <option
+                v-for="option in preloadedMonthOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+              <option
+                v-if="!preloadedMonthOptions.some((option) => option.value === monthlyPeriodLabel)"
+                :value="monthlyPeriodLabel"
+              >
+                {{ monthlyPeriodLabel }} (업로드)
+              </option>
+            </select>
+          </label>
           <label class="table-filter">
             <span class="table-filter-label">
               <svg viewBox="0 0 16 16" aria-hidden="true">
