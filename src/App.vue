@@ -530,11 +530,21 @@ const partOptionTree = computed(() => {
   const branches = [];
   const singles = [];
 
+  const isDivPart = (part) => / div$/i.test(part);
+  const sortWithinGroup = (a, b) => {
+    const aDiv = isDivPart(a);
+    const bDiv = isDivPart(b);
+    if (aDiv && !bDiv) return -1;
+    if (!aDiv && bDiv) return 1;
+    return a.localeCompare(b, "en", { sensitivity: "base" });
+  };
+
   for (const [group, children] of groupsMap.entries()) {
     if (children.length > 1) {
+      const ordered = [...children].sort(sortWithinGroup);
       branches.push({
         group,
-        children: children.map((part) => ({ value: `part:${part}`, label: part }))
+        children: ordered.map((part) => ({ value: `part:${part}`, label: part }))
       });
     } else {
       const part = children[0];
