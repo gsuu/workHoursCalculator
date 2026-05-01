@@ -507,9 +507,30 @@ const formatIssueDates = (issueDates) => {
 
 const normalizeText = (value) => String(value ?? "").trim().replace(/\s+/g, " ");
 const SUBTEAM_SUFFIX_RE = /\s+(?:\d+|div|Design)$/i;
+
+// Hiworks Excel은 "소속" 한 컬럼만 평문으로 줘서 부서 트리 정보가 없음.
+// 패턴(접미사) 기반 자동 그룹핑으로 대부분 처리되지만,
+// 패턴이 안 맞는 부서(다른 프리픽스끼리 같은 디비전 소속)는 여기서 명시적으로 매핑.
+const MANUAL_PART_GROUPS = {
+  "CC div": "CC div",
+  "SSF": "CC div",
+  "SSTS": "CC div",
+  "LFmall": "CC div",
+  "Youngone": "CC div",
+  "PLN 1": "CC div",
+  "PLN 2": "CC div",
+  "PD div": "PD div",
+  "Gmarket 1": "PD div",
+  "Gmarket 2": "PD div",
+  "K.Village": "PD div"
+};
+
 const getPartGroup = (part) => {
   const normalized = normalizeText(part);
   if (!normalized) return "";
+
+  const manual = MANUAL_PART_GROUPS[normalized];
+  if (manual) return manual;
 
   const grouped = normalized.replace(SUBTEAM_SUFFIX_RE, "");
   return grouped || normalized;
