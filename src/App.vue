@@ -507,7 +507,7 @@ const partOptions = computed(() => {
     .filter(([, count]) => count > 1)
     .map(([group]) => ({
       value: `group:${group}`,
-      label: group
+      label: `${group} (전체)`
     }))
     .sort((left, right) => left.label.localeCompare(right.label, "en", { sensitivity: "base" }));
 
