@@ -34,7 +34,7 @@ The Windows scheduled-task pipeline (`scripts/update-preloaded-monthly.ps1`, `re
 - `HIWORKS_ID`, `HIWORKS_PW` — service account credentials (use a dedicated read-only account; 2FA must be off for that account, otherwise programmatic login fails)
 - `HIWORKS_NODE_ID` — defaults to `12344` if unset
 - `HIWORKS_DOMAIN` — tenant domain, defaults to `cttd.co.kr`. The script first GETs `login.office.hiworks.com/<domain>` to warm tenant cookies, then sends `Origin`/`Referer` headers pointing at that page during login.
-- `SLACK_WEBHOOK_URL` — optional, posts to Slack only on failure
+- `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` — optional, send failure email to `jisuk@cttd.co.kr` via Python `smtplib`. `SMTP_PORT` defaults to 465 (SSL); set to 587 for STARTTLS. Works with Gmail App Password (`smtp.gmail.com:465`) or any company SMTP.
 
 The login endpoint is unofficial (not part of the public Hiworks Open API), so it can break if Hiworks redesigns their auth. Failures notify Slack and the run can be re-triggered via `workflow_dispatch` with optional year/month override.
 

@@ -112,16 +112,48 @@ jobs:
         if: always()
         run: rm -rf ./tmp-hiworks
 
-      - name: Notify Slack on failure
+      - name: Notify by email on failure
         if: failure()
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_TO: jisuk@cttd.co.kr
           RUN_URL: ${{ format('{0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
         run: |
-          if [ -z "$SLACK_WEBHOOK_URL" ]; then
-            echo "SLACK_WEBHOOK_URL 미설정 — 알림 생략"
+          if [ -z "$SMTP_HOST" ] || [ -z "$SMTP_USER" ] || [ -z "$SMTP_PASS" ]; then
+            echo "SMTP secrets 미설정 — 이메일 알림 생략"
             exit 0
           fi
-          curl -sS -X POST -H "Content-type: application/json" \
-            --data "{\"text\":\":warning: 월별 자동 업데이트 실패\\n<${RUN_URL}|로그 보기>\"}" \
-            "$SLACK_WEBHOOK_URL"
+          python3 - <<'PY'
+          import os, smtplib, ssl
+          from email.message import EmailMessage
+
+          msg = EmailMessage()
+          msg["Subject"] = "[workHoursCalculator] 월별 자동 업데이트 실패"
+          msg["From"] = os.environ["SMTP_USER"]
+          msg["To"] = os.environ["MAIL_TO"]
+          msg.set_content(
+              "워크플로우가 실패했습니다.\n\n"
+              f"Run: {os.environ['RUN_URL']}\n"
+          )
+
+          host = os.environ["SMTP_HOST"]
+          port = int(os.environ.get("SMTP_PORT") or "465")
+          user = os.environ["SMTP_USER"]
+          password = os.environ["SMTP_PASS"]
+          ctx = ssl.create_default_context()
+
+          if port == 465:
+              with smtplib.SMTP_SSL(host, port, context=ctx) as smtp:
+                  smtp.login(user, password)
+                  smtp.send_message(msg)
+          else:
+              with smtplib.SMTP(host, port) as smtp:
+                  smtp.starttls(context=ctx)
+                  smtp.login(user, password)
+                  smtp.send_message(msg)
+
+          print(f"이메일 발송 완료 → {os.environ['MAIL_TO']}")
+          PY
