@@ -45,6 +45,7 @@ jobs:
         run: npm ci
 
       - name: Fetch Hiworks Excel
+        id: fetch
         env:
           HIWORKS_ID: ${{ secrets.HIWORKS_ID }}
           HIWORKS_PW: ${{ secrets.HIWORKS_PW }}
@@ -66,7 +67,7 @@ jobs:
             exit 1
           fi
           node scripts/generate-preloaded-monthly.mjs --attendance "$ATT" --detail "$DET"
-          PERIOD=$(node -e "import('./src/preloadedMonthlyWorkers.js').then(m => process.stdout.write(m.PRELOADED_MONTHLY_PERIOD_LABEL))")
+          PERIOD="${{ steps.fetch.outputs.year }}년 ${{ steps.fetch.outputs.month }}월"
           echo "period=$PERIOD" >> "$GITHUB_OUTPUT"
 
       - name: Run tests
