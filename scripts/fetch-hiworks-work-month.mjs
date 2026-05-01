@@ -3,6 +3,8 @@ import path from "node:path";
 
 const LOGIN_URL = "https://auth-api.office.hiworks.com/office-web/login";
 const EXPORT_URL = "https://hr-work-api.office.hiworks.com/v4/excel/export/work-month";
+const TENANT_PAGE_BASE = "https://login.office.hiworks.com";
+const DEFAULT_DOMAIN = "cttd.co.kr";
 
 const parseArgs = (argv) => {
   const args = {};
@@ -26,25 +28,54 @@ const getPreviousMonth = () => {
   return { year: prev.getFullYear(), month: prev.getMonth() + 1 };
 };
 
-const collectCookieHeader = (response) => {
+const mergeCookies = (...sources) => {
+  const map = new Map();
+  for (const source of sources) {
+    if (!source) continue;
+    for (const pair of source.split(";")) {
+      const trimmed = pair.trim();
+      if (!trimmed) continue;
+      const equalIndex = trimmed.indexOf("=");
+      if (equalIndex < 1) continue;
+      map.set(trimmed.slice(0, equalIndex), trimmed.slice(equalIndex + 1));
+    }
+  }
+  return [...map.entries()].map(([name, value]) => `${name}=${value}`).join("; ");
+};
+
+const cookieHeaderFromResponse = (response) => {
   const setCookies = typeof response.headers.getSetCookie === "function"
     ? response.headers.getSetCookie()
     : [response.headers.get("set-cookie")].filter(Boolean);
 
-  const pairs = [];
-  for (const entry of setCookies) {
-    if (!entry) continue;
-    const [pair] = entry.split(";");
-    const trimmed = pair.trim();
-    if (trimmed) pairs.push(trimmed);
-  }
-  return pairs.join("; ");
+  return setCookies
+    .filter(Boolean)
+    .map((entry) => entry.split(";")[0]?.trim())
+    .filter(Boolean)
+    .join("; ");
 };
 
-const login = async ({ id, password }) => {
+const warmTenantCookies = async (domain) => {
+  const url = `${TENANT_PAGE_BASE}/${encodeURIComponent(domain)}`;
+  const response = await fetch(url, { redirect: "manual" });
+  // 200, 301, 302 모두 정상으로 간주 — 쿠키만 회수
+  if (![200, 301, 302].includes(response.status)) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`테넌트 페이지 접근 실패: HTTP ${response.status} ${text.slice(0, 200)}`);
+  }
+  return cookieHeaderFromResponse(response);
+};
+
+const login = async ({ id, password, domain, warmCookieHeader }) => {
+  const referer = `${TENANT_PAGE_BASE}/${encodeURIComponent(domain)}`;
   const response = await fetch(LOGIN_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Origin": TENANT_PAGE_BASE,
+      "Referer": referer,
+      ...(warmCookieHeader ? { Cookie: warmCookieHeader } : {})
+    },
     body: JSON.stringify({ id, password, ip_security_level: "1" })
   });
 
@@ -53,11 +84,12 @@ const login = async ({ id, password }) => {
     throw new Error(`로그인 실패: HTTP ${response.status} ${text.slice(0, 200)}`);
   }
 
-  const cookieHeader = collectCookieHeader(response);
-  if (!cookieHeader) {
+  const loginCookies = cookieHeaderFromResponse(response);
+  const merged = mergeCookies(warmCookieHeader, loginCookies);
+  if (!merged) {
     throw new Error("로그인 응답에 Set-Cookie가 없습니다. 자격증명 또는 2FA 설정을 확인하세요.");
   }
-  return cookieHeader;
+  return merged;
 };
 
 const downloadExcel = async ({ cookieHeader, year, month, nodeId, type, outPath }) => {
@@ -84,6 +116,7 @@ const main = async () => {
   const id = process.env.HIWORKS_ID;
   const password = process.env.HIWORKS_PW;
   const nodeId = process.env.HIWORKS_NODE_ID || "12344";
+  const domain = process.env.HIWORKS_DOMAIN || DEFAULT_DOMAIN;
 
   if (!id || !password) {
     throw new Error("HIWORKS_ID와 HIWORKS_PW 환경변수가 필요합니다.");
@@ -99,8 +132,11 @@ const main = async () => {
   const outDir = path.resolve(args["out-dir"] ?? "./tmp-hiworks");
   await fs.mkdir(outDir, { recursive: true });
 
+  console.log(`테넌트 페이지 워밍업: ${domain}`);
+  const warmCookieHeader = await warmTenantCookies(domain);
+
   console.log(`로그인 중...`);
-  const cookieHeader = await login({ id, password });
+  const cookieHeader = await login({ id, password, domain, warmCookieHeader });
   console.log(`로그인 완료 (쿠키 ${cookieHeader.split(";").length}개 보관)`);
 
   console.log(`다운로드: ${year}년 ${month}월 (node_id=${nodeId})`);

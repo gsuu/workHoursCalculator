@@ -47,6 +47,7 @@ jobs:
           HIWORKS_ID: ${{ secrets.HIWORKS_ID }}
           HIWORKS_PW: ${{ secrets.HIWORKS_PW }}
           HIWORKS_NODE_ID: ${{ secrets.HIWORKS_NODE_ID }}
+          HIWORKS_DOMAIN: ${{ secrets.HIWORKS_DOMAIN }}
         run: |
           ARGS=""
           if [ -n "${{ inputs.year }}" ]; then ARGS="$ARGS --year ${{ inputs.year }}"; fi
