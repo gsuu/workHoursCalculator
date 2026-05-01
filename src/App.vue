@@ -1404,7 +1404,7 @@ main {
   align-items: center;
   justify-content: center;
   border: 1px solid #d8dadf;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   background: #fff;
   color: #4a4f55;
   cursor: pointer;
