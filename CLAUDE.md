@@ -29,7 +29,7 @@ The Windows scheduled-task pipeline (`scripts/update-preloaded-monthly.ps1`, `re
 
 ### Cloud automation (GitHub Actions)
 
-`.github/workflows/monthly-update.yml` runs the same pipeline on a schedule (매월 2일 09:00 KST) without needing a Windows PC. It uses `scripts/fetch-hiworks-work-month.mjs` to log into Hiworks programmatically (`POST auth-api.office.hiworks.com/office-web/login` with `{ id, password, ip_security_level: "1" }`), download the two Excel files via `hr-work-api.../v4/excel/export/work-month`, then generate / commit / build / deploy. Required GitHub Secrets:
+`.github/workflows/monthly-update.yml` runs the same pipeline on a schedule (매월 1일 09:00 KST) without needing a Windows PC. It uses `scripts/fetch-hiworks-work-month.mjs` to log into Hiworks programmatically (`POST auth-api.office.hiworks.com/office-web/login` with `{ id, password, ip_security_level: "1" }`), download the two Excel files via `hr-work-api.../v4/excel/export/work-month`, then generate / commit / build / deploy. Required GitHub Secrets:
 
 - `HIWORKS_ID`, `HIWORKS_PW` — service account credentials (use a dedicated read-only account; 2FA must be off for that account, otherwise programmatic login fails)
 - `HIWORKS_NODE_ID` — defaults to `12344` if unset

@@ -2,8 +2,8 @@ name: 월별 자동 업데이트
 
 on:
   schedule:
-    # 매월 2일 09:00 KST (= 00:00 UTC). GH Actions 스케줄러는 부하에 따라 지연될 수 있음.
-    - cron: "0 0 2 * *"
+    # 매월 1일 09:00 KST (= 00:00 UTC). GH Actions 스케줄러는 부하에 따라 지연될 수 있음.
+    - cron: "0 0 1 * *"
   workflow_dispatch:
     inputs:
       year:
