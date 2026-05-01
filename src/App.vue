@@ -62,6 +62,7 @@ const selectedWorkerId = ref("");
 const copyToastMessage = ref("");
 const copyToastVisible = ref(false);
 const persistenceReady = ref(false);
+const showManualUpload = ref(false);
 
 const preloadedMonthOptions = computed(() =>
   [...PRELOADED_MONTHLY_DATASETS]
@@ -889,10 +890,22 @@ watch(
       </div>
     </section>
 
-    <section class="panel">
-        <div class="head">
+    <section :class="['panel', 'manual-upload-panel', { 'is-collapsed': !showManualUpload }]">
+        <button
+          type="button"
+          class="manual-upload-toggle"
+          :aria-expanded="showManualUpload"
+          @click="showManualUpload = !showManualUpload"
+        >
+          <span class="manual-upload-toggle-label">월별 파일 업로드 (수동)</span>
+          <span class="manual-upload-toggle-hint">{{ showManualUpload ? '닫기' : '필요할 때만 펼쳐서 사용' }}</span>
+          <svg class="manual-upload-chevron" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4 6l4 4 4-4" />
+          </svg>
+        </button>
+
+        <div v-if="showManualUpload" class="head">
           <div>
-            <h2>월별 파일 업로드</h2>
             <ol class="upload-steps">
               <li>하이웍스 -&gt; 인사/회계 -&gt; 인사근무 -&gt; 근무관리 -&gt; 전사 근무관리 -&gt; 근태현황 접속</li>
               <li>대상기간, 부서 선택</li>
@@ -906,7 +919,7 @@ watch(
           </div>
         </div>
 
-      <div class="transfer-shell">
+      <div v-if="showManualUpload" class="transfer-shell">
         <div class="transfer-rail">
           <section class="transfer-column transfer-column-download">
             <p class="transfer-kicker">파일 다운로드</p>
@@ -1329,6 +1342,56 @@ main {
 
 .hero + .panel {
   margin-top: 30px;
+}
+
+.manual-upload-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid #d8dadf;
+  border-radius: 999px;
+  background: #fff;
+  color: #4a4f55;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.manual-upload-toggle:hover {
+  border-color: #b8bbc0;
+  background: #fafbfc;
+}
+
+.manual-upload-toggle-label {
+  font-weight: 600;
+  color: #1f2227;
+}
+
+.manual-upload-toggle-hint {
+  color: #8a8f96;
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.manual-upload-chevron {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.2s ease;
+}
+
+.manual-upload-panel:not(.is-collapsed) .manual-upload-chevron {
+  transform: rotate(180deg);
+}
+
+.manual-upload-panel:not(.is-collapsed) .manual-upload-toggle {
+  margin-bottom: 16px;
 }
 
 .hero-copy {
