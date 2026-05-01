@@ -1,0 +1,65 @@
+name: gh-pages 배포
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "index.html"
+      - "vite.config.js"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gh-pages-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Deploy dist to gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages
+          GH_TREE=$(mktemp -d)
+          git worktree add "$GH_TREE" gh-pages
+          rm -rf "$GH_TREE/assets"
+          cp -R dist/assets "$GH_TREE/assets"
+          cp dist/index.html "$GH_TREE/index.html"
+          cp dist/favicon.ico "$GH_TREE/favicon.ico"
+          cp dist/robots.txt "$GH_TREE/robots.txt"
+          cd "$GH_TREE"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "변경사항 없음 — skip"
+            exit 0
+          fi
+          SUBJECT=$(git -C "$GITHUB_WORKSPACE" log -1 --pretty=%s main)
+          git commit -m "chore: 자동 배포 — ${SUBJECT}"
+          git push origin gh-pages
