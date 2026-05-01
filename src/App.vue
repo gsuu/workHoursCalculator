@@ -483,11 +483,12 @@ const formatIssueDates = (issueDates) => {
 };
 
 const normalizeText = (value) => String(value ?? "").trim().replace(/\s+/g, " ");
+const SUBTEAM_SUFFIX_RE = /\s+(?:\d+|div|Design)$/i;
 const getPartGroup = (part) => {
   const normalized = normalizeText(part);
   if (!normalized) return "";
 
-  const grouped = normalized.replace(/\s+\d+$/, "");
+  const grouped = normalized.replace(SUBTEAM_SUFFIX_RE, "");
   return grouped || normalized;
 };
 
