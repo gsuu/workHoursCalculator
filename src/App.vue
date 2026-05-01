@@ -515,37 +515,47 @@ const getPartGroup = (part) => {
   return grouped || normalized;
 };
 
-const partOptions = computed(() => {
+const partOptionTree = computed(() => {
   const parts = [...new Set(monthlyWorkers.value.map((worker) => worker.part).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, "en", { sensitivity: "base" }));
 
-  const groupedCounts = parts.reduce((map, part) => {
+  const groupsMap = new Map();
+  for (const part of parts) {
     const group = getPartGroup(part);
-    if (!group) return map;
-    map.set(group, (map.get(group) ?? 0) + 1);
-    return map;
-  }, new Map());
+    if (!group) continue;
+    if (!groupsMap.has(group)) groupsMap.set(group, []);
+    groupsMap.get(group).push(part);
+  }
 
-  const groupOptions = [...groupedCounts.entries()]
-    .filter(([, count]) => count > 1)
-    .map(([group]) => ({
-      value: `group:${group}`,
-      label: `${group} (전체)`
-    }))
-    .sort((left, right) => left.label.localeCompare(right.label, "en", { sensitivity: "base" }));
+  const branches = [];
+  const singles = [];
 
-  const partItems = parts.map((part) => ({
-    value: `part:${part}`,
-    label: part
-  }));
+  for (const [group, children] of groupsMap.entries()) {
+    if (children.length > 1) {
+      branches.push({
+        group,
+        children: children.map((part) => ({ value: `part:${part}`, label: part }))
+      });
+    } else {
+      const part = children[0];
+      singles.push({ value: `part:${part}`, label: part });
+    }
+  }
 
-  const sortedOptions = [...groupOptions, ...partItems]
-    .sort((left, right) => left.label.localeCompare(right.label, "en", { sensitivity: "base" }));
+  branches.sort((a, b) => a.group.localeCompare(b.group, "en", { sensitivity: "base" }));
+  singles.sort((a, b) => a.label.localeCompare(b.label, "en", { sensitivity: "base" }));
 
-  return [
-    { value: "all", label: "전체" },
-    ...sortedOptions
-  ];
+  return { branches, singles };
+});
+
+const partOptions = computed(() => {
+  const flat = [{ value: "all", label: "전체" }];
+  for (const branch of partOptionTree.value.branches) {
+    flat.push({ value: `group:${branch.group}`, label: `${branch.group} (전체)` });
+    for (const child of branch.children) flat.push(child);
+  }
+  for (const single of partOptionTree.value.singles) flat.push(single);
+  return flat;
 });
 
 const selectedPartLabel = computed(() =>
@@ -1069,12 +1079,27 @@ watch(
               <span>Team</span>
             </span>
             <select v-model="selectedPart">
-              <option
-                v-for="option in partOptions"
-                :key="option.value"
-                :value="option.value"
+              <option value="all">전체</option>
+              <optgroup
+                v-for="branch in partOptionTree.branches"
+                :key="branch.group"
+                :label="branch.group"
               >
-                {{ option.label }}
+                <option :value="`group:${branch.group}`">{{ branch.group }} 전체</option>
+                <option
+                  v-for="child in branch.children"
+                  :key="child.value"
+                  :value="child.value"
+                >
+                  ↳ {{ child.label }}
+                </option>
+              </optgroup>
+              <option
+                v-for="single in partOptionTree.singles"
+                :key="single.value"
+                :value="single.value"
+              >
+                {{ single.label }}
               </option>
             </select>
           </label>
