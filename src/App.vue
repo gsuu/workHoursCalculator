@@ -890,85 +890,87 @@ watch(
       </div>
     </section>
 
-    <section :class="['panel', 'manual-upload-panel', { 'is-collapsed': !showManualUpload }]">
-        <button
-          type="button"
-          class="manual-upload-toggle"
-          :aria-expanded="showManualUpload"
-          @click="showManualUpload = !showManualUpload"
-        >
-          <span class="manual-upload-toggle-label">월별 파일 업로드 (수동)</span>
-          <span class="manual-upload-toggle-hint">{{ showManualUpload ? '닫기' : '필요할 때만 펼쳐서 사용' }}</span>
-          <svg class="manual-upload-chevron" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 6l4 4 4-4" />
-          </svg>
-        </button>
+    <section v-if="monthlyRows.length > 0" class="panel">
+      <div class="head">
+        <div>
+          <h2>월별 결과 표</h2>
+          <button
+            type="button"
+            class="manual-upload-toggle"
+            :aria-expanded="showManualUpload"
+            @click="showManualUpload = !showManualUpload"
+          >
+            <span class="manual-upload-toggle-label">월별 파일 업로드 (수동)</span>
+            <span class="manual-upload-toggle-hint">{{ showManualUpload ? '닫기' : '필요할 때만 펼쳐서 사용' }}</span>
+            <svg :class="['manual-upload-chevron', { 'is-open': showManualUpload }]" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 6l4 4 4-4" />
+            </svg>
+          </button>
+        </div>
+      </div>
 
-        <div v-if="showManualUpload" class="head">
-          <div>
-            <ol class="upload-steps">
-              <li>하이웍스 -&gt; 인사/회계 -&gt; 인사근무 -&gt; 근무관리 -&gt; 전사 근무관리 -&gt; 근태현황 접속</li>
-              <li>대상기간, 부서 선택</li>
-              <li><b>근무결과(상세), 근무현황</b> 파일을 다운로드</li>
-              <li>업로드</li>
-            </ol>
-            <div class="upload-note">
-              <p>* 두 파일은 같은 월의 파일이어야 합니다.</p>
-              <p>* 아래에서 바로 다운로드도 가능합니다.</p>
-            </div>
-          </div>
+      <div v-if="showManualUpload" class="manual-upload-collapse">
+        <ol class="upload-steps">
+          <li>하이웍스 -&gt; 인사/회계 -&gt; 인사근무 -&gt; 근무관리 -&gt; 전사 근무관리 -&gt; 근태현황 접속</li>
+          <li>대상기간, 부서 선택</li>
+          <li><b>근무결과(상세), 근무현황</b> 파일을 다운로드</li>
+          <li>업로드</li>
+        </ol>
+        <div class="upload-note">
+          <p>* 두 파일은 같은 월의 파일이어야 합니다.</p>
+          <p>* 아래에서 바로 다운로드도 가능합니다.</p>
         </div>
 
-      <div v-if="showManualUpload" class="transfer-shell">
-        <div class="transfer-rail">
-          <section class="transfer-column transfer-column-download">
-            <p class="transfer-kicker">파일 다운로드</p>
-            <label class="transfer-month">
-              <span>대상 월</span>
-              <div class="transfer-month-controls">
-                <select v-model="selectedDownloadYear">
-                  <option
-                    v-for="year in downloadYearOptions"
-                    :key="year"
-                    :value="year"
-                  >
-                    {{ year }}년
-                  </option>
-                </select>
-                <select v-model="selectedDownloadMonth">
-                  <option
-                    v-for="month in downloadMonthOptions"
-                    :key="month"
-                    :value="month"
-                  >
-                    {{ month }}월
-                  </option>
-                </select>
+        <div class="transfer-shell">
+          <div class="transfer-rail">
+            <section class="transfer-column transfer-column-download">
+              <p class="transfer-kicker">파일 다운로드</p>
+              <label class="transfer-month">
+                <span>대상 월</span>
+                <div class="transfer-month-controls">
+                  <select v-model="selectedDownloadYear">
+                    <option
+                      v-for="year in downloadYearOptions"
+                      :key="year"
+                      :value="year"
+                    >
+                      {{ year }}년
+                    </option>
+                  </select>
+                  <select v-model="selectedDownloadMonth">
+                    <option
+                      v-for="month in downloadMonthOptions"
+                      :key="month"
+                      :value="month"
+                    >
+                      {{ month }}월
+                    </option>
+                  </select>
+                </div>
+              </label>
+              <div class="transfer-button-row">
+                <button class="download-action-button" type="button" @click="openAttendanceExport">
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M8 2.5v7m0 0 2.5-2.5M8 9.5 5.5 7M3 11.5h10v2H3z" />
+                  </svg>
+                  <span>근무현황 다운로드</span>
+                </button>
+                <button class="download-action-button" type="button" @click="openDetailExport">
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M8 2.5v7m0 0 2.5-2.5M8 9.5 5.5 7M3 11.5h10v2H3z" />
+                  </svg>
+                  <span>근무결과(상세) 다운로드</span>
+                </button>
               </div>
-            </label>
-            <div class="transfer-button-row">
-              <button class="download-action-button" type="button" @click="openAttendanceExport">
-                <svg viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M8 2.5v7m0 0 2.5-2.5M8 9.5 5.5 7M3 11.5h10v2H3z" />
-                </svg>
-                <span>근무현황 다운로드</span>
-              </button>
-              <button class="download-action-button" type="button" @click="openDetailExport">
-                <svg viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M8 2.5v7m0 0 2.5-2.5M8 9.5 5.5 7M3 11.5h10v2H3z" />
-                </svg>
-                <span>근무결과(상세) 다운로드</span>
-              </button>
-            </div>
-          </section>
+            </section>
 
-          <div class="transfer-divider" aria-hidden="true"></div>
+            <div class="transfer-divider" aria-hidden="true"></div>
 
-          <section class="transfer-column transfer-column-upload">
-            <div class="transfer-upload-head">
-              <p class="transfer-kicker">파일 업로드</p>
-              <p class="transfer-copy">로컬에 저장된 동일 형식 파일을 바로 업로드할 수 있습니다.</p>
-            </div>
+            <section class="transfer-column transfer-column-upload">
+              <div class="transfer-upload-head">
+                <p class="transfer-kicker">파일 업로드</p>
+                <p class="transfer-copy">로컬에 저장된 동일 형식 파일을 바로 업로드할 수 있습니다.</p>
+              </div>
               <div class="transfer-upload-list">
                 <label class="transfer-upload-row">
                   <span class="transfer-upload-label">근태현황 파일</span>
@@ -995,29 +997,21 @@ watch(
                   먼저 근태현황 파일을 업로드해주세요.
                 </p>
               </div>
-            <div class="transfer-upload-actions">
-              <button
-                class="download-action-button transfer-apply-button"
-                type="button"
-                :disabled="!canApplyMonthlyFiles"
-                @click="applyMonthlyFiles"
-              >
-                적용하기
-              </button>
-            </div>
-          </section>
+              <div class="transfer-upload-actions">
+                <button
+                  class="download-action-button transfer-apply-button"
+                  type="button"
+                  :disabled="!canApplyMonthlyFiles"
+                  @click="applyMonthlyFiles"
+                >
+                  적용하기
+                </button>
+              </div>
+            </section>
+          </div>
         </div>
-      </div>
 
-      <p v-if="monthlyImportLoading" class="sub import-status">파일을 읽고 월별 결과를 계산하는 중입니다.</p>
-    </section>
-
-    <section v-if="monthlyRows.length > 0" class="panel">
-      <div class="head">
-        <div>
-          <h2>월별 결과 표</h2>
-          <p class="sub result-sub">업로드한 파일을 기준으로 작업자별 환산 결과를 보여주며, 현재 결과와 전월 이월 휴가 입력값은 이 브라우저에 자동 저장됩니다.</p>
-        </div>
+        <p v-if="monthlyImportLoading" class="sub import-status">파일을 읽고 월별 결과를 계산하는 중입니다.</p>
       </div>
       <div class="table-toolbar">
         <div class="table-filters">
@@ -1386,12 +1380,20 @@ main {
   transition: transform 0.2s ease;
 }
 
-.manual-upload-panel:not(.is-collapsed) .manual-upload-chevron {
+.manual-upload-chevron.is-open {
   transform: rotate(180deg);
 }
 
-.manual-upload-panel:not(.is-collapsed) .manual-upload-toggle {
-  margin-bottom: 16px;
+.head .manual-upload-toggle {
+  margin-top: 8px;
+}
+
+.manual-upload-collapse {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed #e2e4e8;
+  display: grid;
+  gap: 16px;
 }
 
 .hero-copy {
