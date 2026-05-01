@@ -507,45 +507,86 @@ const formatIssueDates = (issueDates) => {
 
 const normalizeText = (value) => String(value ?? "").trim().replace(/\s+/g, " ");
 const SUBTEAM_SUFFIX_RE = /\s+(?:\d+|div|Design)$/i;
+
+// Hiworks Excel은 "소속" 한 컬럼만 평문으로 줘서 부서 트리 정보가 없음.
+// 패턴(접미사) 기반 자동 그룹핑으로 대부분 처리되지만,
+// 패턴이 안 맞는 부서(다른 프리픽스끼리 같은 디비전 소속)는 여기서 명시적으로 매핑.
+const MANUAL_PART_GROUPS = {
+  "CC div": "CC div",
+  "SSF": "CC div",
+  "SSTS": "CC div",
+  "LFmall": "CC div",
+  "Youngone": "CC div",
+  "PLN 1": "CC div",
+  "PLN 2": "CC div",
+  "PD div": "PD div",
+  "Gmarket 1": "PD div",
+  "Gmarket 2": "PD div",
+  "K.Village": "PD div"
+};
+
 const getPartGroup = (part) => {
   const normalized = normalizeText(part);
   if (!normalized) return "";
+
+  const manual = MANUAL_PART_GROUPS[normalized];
+  if (manual) return manual;
 
   const grouped = normalized.replace(SUBTEAM_SUFFIX_RE, "");
   return grouped || normalized;
 };
 
-const partOptions = computed(() => {
+const partOptionTree = computed(() => {
   const parts = [...new Set(monthlyWorkers.value.map((worker) => worker.part).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, "en", { sensitivity: "base" }));
 
-  const groupedCounts = parts.reduce((map, part) => {
+  const groupsMap = new Map();
+  for (const part of parts) {
     const group = getPartGroup(part);
-    if (!group) return map;
-    map.set(group, (map.get(group) ?? 0) + 1);
-    return map;
-  }, new Map());
+    if (!group) continue;
+    if (!groupsMap.has(group)) groupsMap.set(group, []);
+    groupsMap.get(group).push(part);
+  }
 
-  const groupOptions = [...groupedCounts.entries()]
-    .filter(([, count]) => count > 1)
-    .map(([group]) => ({
-      value: `group:${group}`,
-      label: `${group} (전체)`
-    }))
-    .sort((left, right) => left.label.localeCompare(right.label, "en", { sensitivity: "base" }));
+  const branches = [];
+  const singles = [];
 
-  const partItems = parts.map((part) => ({
-    value: `part:${part}`,
-    label: part
-  }));
+  const isDivPart = (part) => / div$/i.test(part);
+  const sortWithinGroup = (a, b) => {
+    const aDiv = isDivPart(a);
+    const bDiv = isDivPart(b);
+    if (aDiv && !bDiv) return -1;
+    if (!aDiv && bDiv) return 1;
+    return a.localeCompare(b, "en", { sensitivity: "base" });
+  };
 
-  const sortedOptions = [...groupOptions, ...partItems]
-    .sort((left, right) => left.label.localeCompare(right.label, "en", { sensitivity: "base" }));
+  for (const [group, children] of groupsMap.entries()) {
+    if (children.length > 1) {
+      const ordered = [...children].sort(sortWithinGroup);
+      branches.push({
+        group,
+        children: ordered.map((part) => ({ value: `part:${part}`, label: part }))
+      });
+    } else {
+      const part = children[0];
+      singles.push({ value: `part:${part}`, label: part });
+    }
+  }
 
-  return [
-    { value: "all", label: "전체" },
-    ...sortedOptions
-  ];
+  branches.sort((a, b) => a.group.localeCompare(b.group, "en", { sensitivity: "base" }));
+  singles.sort((a, b) => a.label.localeCompare(b.label, "en", { sensitivity: "base" }));
+
+  return { branches, singles };
+});
+
+const partOptions = computed(() => {
+  const flat = [{ value: "all", label: "전체" }];
+  for (const branch of partOptionTree.value.branches) {
+    flat.push({ value: `group:${branch.group}`, label: `${branch.group} (전체)` });
+    for (const child of branch.children) flat.push(child);
+  }
+  for (const single of partOptionTree.value.singles) flat.push(single);
+  return flat;
 });
 
 const selectedPartLabel = computed(() =>
@@ -1069,12 +1110,27 @@ watch(
               <span>Team</span>
             </span>
             <select v-model="selectedPart">
-              <option
-                v-for="option in partOptions"
-                :key="option.value"
-                :value="option.value"
+              <option value="all">전체</option>
+              <optgroup
+                v-for="branch in partOptionTree.branches"
+                :key="branch.group"
+                :label="branch.group"
               >
-                {{ option.label }}
+                <option :value="`group:${branch.group}`">{{ branch.group }} 전체</option>
+                <option
+                  v-for="child in branch.children"
+                  :key="child.value"
+                  :value="child.value"
+                >
+                  ↳ {{ child.label }}
+                </option>
+              </optgroup>
+              <option
+                v-for="single in partOptionTree.singles"
+                :key="single.value"
+                :value="single.value"
+              >
+                {{ single.label }}
               </option>
             </select>
           </label>
