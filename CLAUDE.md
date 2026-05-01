@@ -27,6 +27,16 @@ npm run generate:preloaded -- \
 
 The Windows scheduled-task pipeline (`scripts/update-preloaded-monthly.ps1`, `register-monthly-task.ps1`) downloads those files from Hiworks, runs the same generator, and force-pushes the result. Don't run those scripts unless asked — they assume Windows + Hiworks session cookies.
 
+### Cloud automation (GitHub Actions)
+
+`.github/workflows/monthly-update.yml` runs the same pipeline on a schedule (매월 2일 09:00 KST) without needing a Windows PC. It uses `scripts/fetch-hiworks-work-month.mjs` to log into Hiworks programmatically (`POST auth-api.office.hiworks.com/office-web/login` with `{ id, password, ip_security_level: "1" }`), download the two Excel files via `hr-work-api.../v4/excel/export/work-month`, then generate / commit / build / deploy. Required GitHub Secrets:
+
+- `HIWORKS_ID`, `HIWORKS_PW` — service account credentials (use a dedicated read-only account; 2FA must be off for that account, otherwise programmatic login fails)
+- `HIWORKS_NODE_ID` — defaults to `12344` if unset
+- `SLACK_WEBHOOK_URL` — optional, posts to Slack only on failure
+
+The login endpoint is unofficial (not part of the public Hiworks Open API), so it can break if Hiworks redesigns their auth. Failures notify Slack and the run can be re-triggered via `workflow_dispatch` with optional year/month override.
+
 ## Architecture
 
 Single-page Vue 3 + Vite app, no router, no state library. `vite.config.js` sets `base: "/workHoursCalculator/"` for GitHub Pages deployment.
