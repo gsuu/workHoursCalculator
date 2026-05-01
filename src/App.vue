@@ -1386,7 +1386,11 @@ main {
 
 .head .manual-upload-toggle {
   margin-top: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 0;
+}
+
+.panel:has(.manual-upload-toggle) > .head {
+  margin-bottom: 18px;
 }
 
 .manual-upload-collapse {
