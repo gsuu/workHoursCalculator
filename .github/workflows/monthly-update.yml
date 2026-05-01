@@ -26,6 +26,8 @@ jobs:
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      TZ: Asia/Seoul
     steps:
       - name: Checkout main
         uses: actions/checkout@v5
