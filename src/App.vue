@@ -63,6 +63,28 @@ const copyToastMessage = ref("");
 const copyToastVisible = ref(false);
 const persistenceReady = ref(false);
 const showManualUpload = ref(false);
+const showActionsMenu = ref(false);
+
+const handleActionsMenuOutside = (event) => {
+  if (!showActionsMenu.value) return;
+  if (event.target.closest(".actions-menu")) return;
+  showActionsMenu.value = false;
+};
+
+const triggerManualUpload = () => {
+  showManualUpload.value = !showManualUpload.value;
+  showActionsMenu.value = false;
+};
+
+const triggerCopyTable = () => {
+  showActionsMenu.value = false;
+  copyMonthlyTable();
+};
+
+const triggerDownloadCsv = () => {
+  showActionsMenu.value = false;
+  downloadMonthlyTableCsv();
+};
 
 const preloadedMonthOptions = computed(() =>
   [...PRELOADED_MONTHLY_DATASETS]
@@ -825,9 +847,13 @@ onBeforeUnmount(() => {
   window.removeEventListener("wheel", preventBackgroundWheel, true);
   window.removeEventListener("touchmove", preventBackgroundTouchMove, true);
   window.removeEventListener("keydown", preventBackgroundKeyScroll, true);
+  document.removeEventListener("click", handleActionsMenuOutside, true);
 });
 
 onMounted(async () => {
+  if (typeof document !== "undefined") {
+    document.addEventListener("click", handleActionsMenuOutside, true);
+  }
   try {
     const snapshot = await readMonthlySnapshot();
     if (snapshot?.workers?.length) {
@@ -862,7 +888,7 @@ watch(
 <template>
   <main>
     <section class="panel hero">
-      <div class="hero-copy">
+      <div class="hero-copy hero-copy--inline">
         <div class="logo-slot" aria-hidden="true">
           <svg viewBox="0 0 2666.667 499.921" role="img">
             <title>CTTD</title>
@@ -891,25 +917,17 @@ watch(
     </section>
 
     <section v-if="monthlyRows.length > 0" class="panel">
-      <div class="head">
-        <div>
-          <h2>월별 결과 표</h2>
-          <button
-            type="button"
-            class="manual-upload-toggle"
-            :aria-expanded="showManualUpload"
-            @click="showManualUpload = !showManualUpload"
-          >
-            <span class="manual-upload-toggle-label">월별 파일 업로드 (수동)</span>
-            <span class="manual-upload-toggle-hint">{{ showManualUpload ? '닫기' : '필요할 때만 펼쳐서 사용' }}</span>
-            <svg :class="['manual-upload-chevron', { 'is-open': showManualUpload }]" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M4 6l4 4 4-4" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <div v-if="showManualUpload" class="manual-upload-collapse">
+      <div v-if="showManualUpload" class="manual-upload-backdrop" @click.self="showManualUpload = false">
+        <section class="manual-upload-modal" role="dialog" aria-modal="true" aria-label="월별 파일 업로드">
+          <header class="manual-upload-modal-head">
+            <h3>월별 파일 업로드 (수동)</h3>
+            <button class="manual-upload-modal-close" type="button" aria-label="닫기" @click="showManualUpload = false">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M4 4l8 8M12 4 4 12" />
+              </svg>
+            </button>
+          </header>
+          <div class="manual-upload-modal-body">
         <ol class="upload-steps">
           <li>하이웍스 -&gt; 인사/회계 -&gt; 인사근무 -&gt; 근무관리 -&gt; 전사 근무관리 -&gt; 근태현황 접속</li>
           <li>대상기간, 부서 선택</li>
@@ -1012,6 +1030,8 @@ watch(
         </div>
 
         <p v-if="monthlyImportLoading" class="sub import-status">파일을 읽고 월별 결과를 계산하는 중입니다.</p>
+          </div>
+        </section>
       </div>
       <div class="table-toolbar">
         <div class="table-filters">
@@ -1073,8 +1093,29 @@ watch(
           </label>
         </div>
         <div class="table-actions">
-          <button class="table-action-button" type="button" @click="copyMonthlyTable">copy</button>
-          <button class="table-action-button" type="button" @click="downloadMonthlyTableCsv">download</button>
+          <div class="actions-menu">
+            <button
+              type="button"
+              class="actions-menu-trigger"
+              :aria-expanded="showActionsMenu"
+              aria-haspopup="menu"
+              aria-label="메뉴"
+              @click.stop="showActionsMenu = !showActionsMenu"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="8" cy="3" r="1.4" />
+                <circle cx="8" cy="8" r="1.4" />
+                <circle cx="8" cy="13" r="1.4" />
+              </svg>
+            </button>
+            <div v-if="showActionsMenu" class="actions-menu-dropdown" role="menu">
+              <button type="button" role="menuitem" @click.stop="triggerManualUpload">
+                {{ showManualUpload ? '수동 업로드 닫기' : '수동 파일 업로드' }}
+              </button>
+              <button type="button" role="menuitem" @click.stop="triggerCopyTable">표 복사</button>
+              <button type="button" role="menuitem" @click.stop="triggerDownloadCsv">CSV 다운로드</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1286,8 +1327,8 @@ watch(
   --muted: #71717a;
   --soft: #f6f6f7;
   --danger: #ef4444;
-  --radius-lg: 14px;
-  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-md: 12px;
   --radius-sm: 8px;
 }
 
@@ -1335,68 +1376,152 @@ main {
 }
 
 .hero + .panel {
-  margin-top: 30px;
+  margin-top: 24px;
 }
 
-.manual-upload-toggle {
+.hero-copy--inline {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.hero-copy--inline h1 {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.actions-menu {
+  position: relative;
+}
+
+.actions-menu-trigger {
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  justify-content: center;
   border: 1px solid #d8dadf;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: #fff;
   color: #4a4f55;
-  font-size: 13px;
-  font-weight: 500;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.manual-upload-toggle:hover {
+.actions-menu-trigger:hover,
+.actions-menu-trigger[aria-expanded="true"] {
   border-color: #b8bbc0;
   background: #fafbfc;
 }
 
-.manual-upload-toggle-label {
-  font-weight: 600;
+.actions-menu-trigger svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.actions-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 168px;
+  padding: 6px;
+  border: 1px solid #e2e4e8;
+  border-radius: var(--radius-md);
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(20, 23, 27, 0.08);
+  display: grid;
+  gap: 2px;
+  z-index: 20;
+}
+
+.actions-menu-dropdown button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
   color: #1f2227;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
-.manual-upload-toggle-hint {
-  color: #8a8f96;
-  font-weight: 400;
-  font-size: 12px;
+.actions-menu-dropdown button:hover {
+  background: #f3f4f6;
 }
 
-.manual-upload-chevron {
+.manual-upload-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(9, 9, 11, 0.32);
+}
+
+.manual-upload-modal {
+  width: min(720px, 100%);
+  max-height: min(86vh, 760px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e5e7eb;
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.16);
+  overflow: hidden;
+}
+
+.manual-upload-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #f0f1f3;
+}
+
+.manual-upload-modal-head h3 {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.manual-upload-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #d9dbe2;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.manual-upload-modal-close svg {
   width: 14px;
   height: 14px;
-  fill: none;
   stroke: currentColor;
-  stroke-width: 1.6;
+  stroke-width: 1.7;
   stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: transform 0.2s ease;
+  fill: none;
 }
 
-.manual-upload-chevron.is-open {
-  transform: rotate(180deg);
-}
-
-.head .manual-upload-toggle {
-  margin-top: 8px;
-  margin-bottom: 0;
-}
-
-.panel:has(.manual-upload-toggle) > .head {
-  margin-bottom: 18px;
-}
-
-.manual-upload-collapse {
+.manual-upload-modal-body {
+  padding: 18px 20px 20px;
+  overflow-y: auto;
   display: grid;
   gap: 16px;
-  margin-bottom: 28px;
 }
 
 .hero-copy {
@@ -1551,7 +1676,7 @@ h1 {
 .transfer-shell {
   padding: 18px 20px;
   border: 1px solid #ececf1;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: #fbfbfc;
 }
 
@@ -2162,7 +2287,7 @@ h1 {
   max-height: min(80vh, 760px);
   padding: 20px 20px 16px;
   border: 1px solid #e5e7eb;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: #ffffff;
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.16);
 }
@@ -2215,7 +2340,7 @@ h1 {
   overflow: auto;
   margin-bottom: 30px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   overscroll-behavior: contain;
 }
 
@@ -2365,7 +2490,7 @@ h1 {
   padding: 14px 16px;
   background: #fffdf6;
   border: 1px solid #f0d16b;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   box-shadow: 0 12px 28px rgba(9, 9, 11, 0.12);
 }
 
