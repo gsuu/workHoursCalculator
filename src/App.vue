@@ -1076,7 +1076,7 @@ watch(
       </div>
       <div class="table-toolbar">
         <div class="table-filters">
-          <label v-if="preloadedMonthOptions.length > 1" class="table-filter">
+          <label v-if="preloadedMonthOptions.length > 1" class="table-filter table-filter--month">
             <span class="table-filter-label">
               <svg viewBox="0 0 16 16" aria-hidden="true">
                 <path d="M3 2.5v2m10-2v2M2.5 6.5h11M3 4.5h10a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5V5a.5.5 0 0 1 .5-.5z" />
@@ -1711,6 +1711,10 @@ h1 {
   -webkit-appearance: none;
   color: var(--text);
   font: inherit;
+}
+
+.table-filter.table-filter--month select {
+  min-width: 132px;
 }
 
 .cell-month {
