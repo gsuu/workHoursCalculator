@@ -1076,7 +1076,7 @@ watch(
       </div>
       <div class="table-toolbar">
         <div class="table-filters">
-          <label v-if="preloadedMonthOptions.length > 1" class="table-filter">
+          <label v-if="preloadedMonthOptions.length > 1" class="table-filter table-filter--month">
             <span class="table-filter-label">
               <svg viewBox="0 0 16 16" aria-hidden="true">
                 <path d="M3 2.5v2m10-2v2M2.5 6.5h11M3 4.5h10a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5V5a.5.5 0 0 1 .5-.5z" />
@@ -1699,12 +1699,22 @@ h1 {
 .table-filter select {
   min-width: 96px;
   min-height: 30px;
-  padding: 0 28px 0 10px;
+  padding: 0 32px 0 12px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: #ffffff;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%234a4f55' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'><path d='M4 6l4 4 4-4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 12px;
+  appearance: none;
+  -webkit-appearance: none;
   color: var(--text);
   font: inherit;
+}
+
+.table-filter.table-filter--month select {
+  min-width: 132px;
 }
 
 .cell-month {
@@ -1792,10 +1802,16 @@ h1 {
 .transfer-month-controls select {
   min-width: 82px;
   min-height: 34px;
-  padding: 0 30px 0 12px;
+  padding: 0 34px 0 14px;
   border: 1px solid #d9dbe2;
   border-radius: 999px;
-  background: #ffffff;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%234a4f55' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'><path d='M4 6l4 4 4-4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 12px 12px;
+  appearance: none;
+  -webkit-appearance: none;
   color: var(--text);
   font: inherit;
 }
