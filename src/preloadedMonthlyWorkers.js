@@ -202450,10 +202450,8 @@ export const PRELOADED_MONTHLY_DATASETS = [
         "holidayGrantMinutes": 0,
         "leaveGrantMinutes": 0,
         "overtimeDayCount": 0,
-        "issueCount": 1,
-        "issueDates": [
-          "2026-05-21"
-        ],
+        "issueCount": 0,
+        "issueDates": [],
         "dailyRecords": [
           {
             "date": "2026-05-04",
@@ -202712,24 +202710,24 @@ export const PRELOADED_MONTHLY_DATASETS = [
             "date": "2026-05-21",
             "workModeLabel": "평일",
             "start": "09:00",
-            "end": "06:01",
+            "end": "18:00",
             "recordedStart": "08:50",
-            "recordedEnd": "06:01",
-            "scheduledStartTime": "",
-            "scheduledEndTime": "",
+            "recordedEnd": "18:01",
+            "scheduledStartTime": "09:00",
+            "scheduledEndTime": "18:00",
             "halfLeaveLabel": "",
             "halfLeavePosition": "",
             "hasApprovedOvertime": false,
             "approvedOvertimeMinutes": 0,
             "approvedNightMinutes": 0,
             "approvedHolidayMinutes": 0,
-            "detailRuleText": "",
+            "detailRuleText": "9시출근",
             "detailOvertimeMinutes": 0,
             "detailNightMinutes": 0,
             "detailHolidayMinutes": 0,
             "overtimeMinutes": 0,
             "nightMinutes": 0,
-            "issueText": "수기 확인 필요"
+            "issueText": ""
           },
           {
             "date": "2026-05-22",
