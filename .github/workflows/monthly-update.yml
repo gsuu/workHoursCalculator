@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: monthly-update
@@ -91,8 +92,15 @@ jobs:
           git push origin main
           echo "skipped=false" >> "$GITHUB_OUTPUT"
 
-      # gh-pages 배포는 별도 워크플로우 (.github/workflows/deploy.yml)에서
-      # main push를 감지해 자동 처리. 여기선 main에 데이터만 커밋하면 끝.
+      # gh-pages 배포(.github/workflows/deploy.yml)는 main push로 트리거되지만,
+      # 기본 GITHUB_TOKEN으로 push하면 GitHub가 다른 워크플로를 트리거하지 않는다
+      # (recursive run 방지). 단 workflow_dispatch/repository_dispatch는 예외이므로
+      # 데이터 커밋이 있었을 때만 deploy.yml을 명시적으로 트리거한다.
+      - name: Trigger gh-pages deploy
+        if: steps.commit.outputs.skipped == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy.yml --ref main
 
       - name: Cleanup downloads
         if: always()
