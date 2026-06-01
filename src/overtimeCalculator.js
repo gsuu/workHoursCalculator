@@ -481,16 +481,21 @@ export const classifyNormal = (intervals, priorWeekMinutes, mode, scheduledRange
 };
 
 const getApprovedCappedEndMinutes = (entry, startMinutes, endMinutes) => {
+  const hasApprovalTracking =
+    entry.approvedOvertimeMinutes != null
+    || entry.approvedNightMinutes != null
+    || entry.approvedHolidayMinutes != null;
+
+  if (!hasApprovalTracking) {
+    return endMinutes;
+  }
+
   const approvedTotalMinutes = Math.max(
     0,
     Math.trunc(entry.approvedOvertimeMinutes ?? 0)
       + Math.trunc(entry.approvedNightMinutes ?? 0)
       + Math.trunc(entry.approvedHolidayMinutes ?? 0)
   );
-
-  if (approvedTotalMinutes <= 0) {
-    return endMinutes;
-  }
 
   const scheduledEndMinutes = toTimeMinutes(entry.scheduledEndTime);
   if (scheduledEndMinutes == null) {
