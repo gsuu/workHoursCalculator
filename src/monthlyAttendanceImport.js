@@ -323,34 +323,104 @@ export const inferDefaultEndTime = (start) => {
   return "";
 };
 
-export const inferScheduledStartTimeFromRule = (ruleText) => {
+const FULL_SHIFT_PATTERN = /(\d{1,2})시(?:(\d{1,2})분)?출근/;
+const SHORT_SHIFT_PATTERN = /단축근무\s*(\d{1,2})\s*-\s*(\d{1,2})\s*시/;
+
+const isValidClock = (hour, minute) =>
+  Number.isInteger(hour) && hour >= 0 && hour <= 23
+  && Number.isInteger(minute) && minute >= 0 && minute <= 59;
+
+const formatRuleClock = (hour, minute) =>
+  `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+
+// Parses a fixed scheduled window from rule text:
+//   "9시출근" / "10시출근" / "9시30분출근" → [N:M, N:M + 9h]  (8h work + 1h lunch)
+//   "단축근무 9-16시" / "단축근무10-17시"   → [A:00, B:00]      (explicit shortened range)
+// Returns null when no fixed-shift pattern is present (e.g. 자율출퇴근, 휴일근무).
+const parseScheduledRangeFromRule = (ruleText) => {
   const text = normalizeText(ruleText);
-  if (text.includes("8시출근")) return "08:00";
-  if (text.includes("9시출근")) return "09:00";
-  if (text.includes("10시출근")) return "10:00";
-  return "";
+
+  const shortMatch = text.match(SHORT_SHIFT_PATTERN);
+  if (shortMatch) {
+    const startHour = Number(shortMatch[1]);
+    const endHour = Number(shortMatch[2]);
+    if (!isValidClock(startHour, 0) || !isValidClock(endHour, 0) || endHour <= startHour) {
+      return null;
+    }
+    return { startHour, startMinute: 0, endHour, endMinute: 0, label: `단축근무 ${startHour}-${endHour}시` };
+  }
+
+  const fullMatch = text.match(FULL_SHIFT_PATTERN);
+  if (fullMatch) {
+    const startHour = Number(fullMatch[1]);
+    const startMinute = fullMatch[2] ? Number(fullMatch[2]) : 0;
+    const endHour = startHour + 9;
+    // Reject shifts whose +9h end would roll past 23:59 — unrepresentable here.
+    if (!isValidClock(startHour, startMinute) || !isValidClock(endHour, startMinute)) {
+      return null;
+    }
+    return {
+      startHour,
+      startMinute,
+      endHour,
+      endMinute: startMinute,
+      label: startMinute ? `${startHour}시${startMinute}분출근` : `${startHour}시출근`
+    };
+  }
+
+  return null;
+};
+
+export const inferScheduledStartTimeFromRule = (ruleText) => {
+  const range = parseScheduledRangeFromRule(ruleText);
+  return range ? formatRuleClock(range.startHour, range.startMinute) : "";
 };
 
 export const inferScheduledShiftLabelFromRule = (ruleText) => {
-  const text = normalizeText(ruleText);
-  if (text.includes("8시출근")) return "8시출근";
-  if (text.includes("9시출근")) return "9시출근";
-  if (text.includes("10시출근")) return "10시출근";
-  return "";
+  const range = parseScheduledRangeFromRule(ruleText);
+  return range ? range.label : "";
 };
 
 export const inferScheduledEndTimeFromRule = (ruleText) => {
-  const text = normalizeText(ruleText);
-  if (text.includes("8시출근")) return "17:00";
-  if (text.includes("9시출근")) return "18:00";
-  if (text.includes("10시출근")) return "19:00";
-  return "";
+  const range = parseScheduledRangeFromRule(ruleText);
+  return range ? formatRuleClock(range.endHour, range.endMinute) : "";
 };
 
 const getScheduledRange = (ruleText) => ({
   start: inferScheduledStartTimeFromRule(ruleText),
   end: inferScheduledEndTimeFromRule(ruleText)
 });
+
+// 자율출퇴근(flexible) has no fixed shift: anchor the scheduled window to the actual
+// clock-in — 8h of work, plus a 1h lunch when clocking in before 14:00 (→ +9h) — so
+// unapproved time past it is trimmed like any fixed shift. Falls back to the fixed-rule
+// inference for every other rule text.
+const AUTONOMOUS_LUNCH_CUTOFF_MINUTES = 14 * 60;
+const resolveScheduledShiftForRecord = ({ ruleText, start }) => {
+  if (normalizeText(ruleText).includes("자율출퇴근")) {
+    const startMinutes = toTimeMinutes(start);
+    if (startMinutes == null) {
+      return { start: "", end: "", label: "자율출퇴근" };
+    }
+    const lunchMinutes = startMinutes < AUTONOMOUS_LUNCH_CUTOFF_MINUTES ? 60 : 0;
+    const endMinutes = startMinutes + 480 + lunchMinutes;
+    if (endMinutes >= 1440) {
+      // Window would cross midnight — not representable as a same-day schedule.
+      return { start: "", end: "", label: "자율출퇴근" };
+    }
+    return {
+      start,
+      end: formatRuleClock(Math.floor(endMinutes / 60), endMinutes % 60),
+      label: "자율출퇴근"
+    };
+  }
+
+  return {
+    start: inferScheduledStartTimeFromRule(ruleText),
+    end: inferScheduledEndTimeFromRule(ruleText),
+    label: inferScheduledShiftLabelFromRule(ruleText)
+  };
+};
 
 const parseDetailDurationMinutes = (value) => {
   const text = normalizeText(value);
@@ -454,7 +524,7 @@ export const resolveRecordedStartTime = ({
   approvedNightMinutes = 0,
   approvedHolidayMinutes = 0
 }) => {
-  const scheduledStart = inferScheduledStartTimeFromRule(ruleText);
+  const scheduledStart = resolveScheduledShiftForRecord({ ruleText, start }).start;
   const approvedMinutes = getApprovedMinutes({
     approvedOvertimeMinutes,
     approvedNightMinutes,
@@ -482,8 +552,7 @@ export const resolveRecordedEndTime = ({
   approvedNightMinutes = 0,
   approvedHolidayMinutes = 0
 }) => {
-  const scheduledStart = inferScheduledStartTimeFromRule(ruleText);
-  const scheduledEnd = inferScheduledEndTimeFromRule(ruleText);
+  const { start: scheduledStart, end: scheduledEnd } = resolveScheduledShiftForRecord({ ruleText, start });
   const approvedMinutes = getEffectiveApprovedMinutes({
     start,
     scheduledStart,
@@ -539,7 +608,12 @@ export const isUnapprovedRangeInvalid = ({
     return false;
   }
 
-  const scheduledRange = getScheduledRange(ruleText);
+  // Use the start-aware schedule so flexible (자율출퇴근) records — which have no fixed
+  // rule window but get a window anchored to the clock-in — are also covered. A clock-out
+  // at or before clock-in within a known day window is a missing/mistaken punch (e.g.
+  // 08:50→06:01), so it needs manual review instead of being computed as a ~24h shift.
+  // Modes with no day window (휴일근무 등) keep their legitimate short overnight shifts.
+  const scheduledRange = resolveScheduledShiftForRecord({ ruleText, start });
   const scheduledStart = scheduledRange.start;
   const scheduledEnd = scheduledRange.end;
   if (!scheduledStart || !scheduledEnd) {
@@ -818,20 +892,33 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
   validateMatchingEmployeeIds(attendance.employeeIds, extractDetailEmployeeIds(detailRows));
   const detailEmployees = extractDetailEmployees(detailRows);
   const detailRules = parseValidatedDetailRows(detailRows, attendance.monthInfo, detailGuideRows);
+
+  return assembleMonthlyResult({
+    detailEmployees,
+    detailRules,
+    records: attendance.records.values(),
+    monthInfo: attendance.monthInfo,
+    sourceCount: attendance.records.size
+  });
+};
+
+// Builds the per-worker monthly result from already-parsed inputs. Shared by the Excel
+// import (parseMonthlyResultFiles) and the in-place data migration so both run the exact
+// same calculation + aggregation. `records` is any iterable of attendance records.
+export const assembleMonthlyResult = ({ detailEmployees, detailRules, records, monthInfo, sourceCount }) => {
   const workerMap = new Map(
     [...detailEmployees.values()].map((employee) => [employee.employeeId, createWorkerSummary(employee)])
   );
 
-  for (const record of attendance.records.values()) {
+  for (const record of records) {
     if (!detailEmployees.has(record.employeeId)) {
       continue;
     }
 
     const detail = detailRules.get(`${record.employeeId}:${record.date}`) ?? null;
     const ruleText = detail?.ruleText ?? "";
-    const scheduledShiftLabel = inferScheduledShiftLabelFromRule(ruleText);
-    const scheduledStartTime = inferScheduledStartTimeFromRule(ruleText);
-    const scheduledEndTime = inferScheduledEndTimeFromRule(ruleText);
+    const { start: scheduledStartTime, end: scheduledEndTime, label: scheduledShiftLabel } =
+      resolveScheduledShiftForRecord({ ruleText, start: record.start });
     const workModeOverride = resolveWorkModeOverride(record.date, ruleText);
     let start = resolveRecordedStartTime({
       start: record.start,
@@ -1031,9 +1118,9 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
 
   return {
     workers,
-    monthInfo: attendance.monthInfo,
+    monthInfo,
     processedCount: workers.length,
-    sourceCount: attendance.records.size
+    sourceCount
   };
 };
 

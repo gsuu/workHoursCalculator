@@ -455,3 +455,37 @@ test("승인 총시간 안에서는 실제 22시 이후 근무를 야간으로 �
   assert.equal(result.weekday150, 240);
   assert.equal(result.weekday200, 81);
 });
+
+test("calculateEntry excludes unapproved overtime tail when approval is tracked but zero", () => {
+  const result = calculateEntry({
+    date: "2025-03-10",
+    start: "08:00",
+    end: "20:00",
+    scheduledStartTime: "09:00",
+    scheduledEndTime: "18:00",
+    approvedOvertimeMinutes: 0,
+    approvedNightMinutes: 0,
+    approvedHolidayMinutes: 0
+  });
+
+  assert.equal(result.error, "");
+  assert.equal(result.workMode, "ordinary");
+  assert.equal(result.overtimeTotal, 0);
+  assert.equal(result.displayOvertimeMinutes, 0);
+  assert.equal(result.displayNightMinutes, 0);
+});
+
+test("calculateEntry still counts scheduled-window overtime when approval is not tracked", () => {
+  const result = calculateEntry({
+    date: "2025-03-10",
+    start: "08:00",
+    end: "20:00",
+    scheduledStartTime: "09:00",
+    scheduledEndTime: "18:00"
+  });
+
+  assert.equal(result.error, "");
+  assert.equal(result.workMode, "ordinary");
+  assert.ok(result.overtimeTotal > 0, `expected overtimeTotal > 0 but got ${result.overtimeTotal}`);
+  assert.equal(result.overtimeTotal, 120);
+});

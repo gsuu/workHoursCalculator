@@ -5,6 +5,7 @@ import {
   hasApprovedOvertime,
   inferDefaultEndTime,
   inferScheduledEndTimeFromRule,
+  inferScheduledShiftLabelFromRule,
   inferScheduledStartTimeFromRule,
   isUnapprovedRangeInvalid,
   validateAttendanceRows,
@@ -32,6 +33,39 @@ test("규칙에서 정시 출근과 정시 퇴근 시각을 읽는다", () => {
   assert.equal(inferScheduledEndTimeFromRule("8시출근"), "17:00");
   assert.equal(inferScheduledEndTimeFromRule("9시출근"), "18:00");
   assert.equal(inferScheduledEndTimeFromRule("10시출근"), "19:00");
+});
+
+test("30분 단위 출근 규칙(9시30분출근)도 근무 시간대를 읽는다", () => {
+  assert.equal(inferScheduledStartTimeFromRule("9시30분출근"), "09:30");
+  assert.equal(inferScheduledEndTimeFromRule("9시30분출근"), "18:30");
+  assert.equal(inferScheduledShiftLabelFromRule("9시30분출근"), "9시30분출근");
+  assert.equal(inferScheduledStartTimeFromRule("8시30분출근"), "08:30");
+  assert.equal(inferScheduledEndTimeFromRule("8시30분출근"), "17:30");
+});
+
+test("출근 규칙이 없으면 빈 문자열을 반환한다", () => {
+  assert.equal(inferScheduledStartTimeFromRule("자율출퇴근"), "");
+  assert.equal(inferScheduledEndTimeFromRule("자율출퇴근"), "");
+  assert.equal(inferScheduledShiftLabelFromRule(""), "");
+});
+
+test("단축근무 범위 규칙을 근무 시간대로 읽는다", () => {
+  assert.equal(inferScheduledStartTimeFromRule("단축근무 9-16시"), "09:00");
+  assert.equal(inferScheduledEndTimeFromRule("단축근무 9-16시"), "16:00");
+  assert.equal(inferScheduledShiftLabelFromRule("단축근무 9-16시"), "단축근무 9-16시");
+  assert.equal(inferScheduledStartTimeFromRule("단축근무10-17시"), "10:00");
+  assert.equal(inferScheduledEndTimeFromRule("단축근무10-17시"), "17:00");
+});
+
+test("자율출퇴근은 출근 시각 기준 8시간(+점심) 근무로 보고 미승인 연장을 자른다", () => {
+  // 14시 이전 출근 → 1시간 점심 인정 (출근 + 9시간)
+  assert.equal(resolveRecordedEndTime({ start: "09:00", end: "22:00", ruleText: "자율출퇴근" }), "18:00");
+  // 14시 이후 출근 → 점심 없음 (출근 + 8시간)
+  assert.equal(resolveRecordedEndTime({ start: "15:00", end: "23:30", ruleText: "자율출퇴근" }), "23:00");
+  // 정시 내 퇴근은 그대로 유지
+  assert.equal(resolveRecordedEndTime({ start: "10:00", end: "17:00", ruleText: "자율출퇴근" }), "17:00");
+  // 자율출퇴근은 이른 출근도 그대로(스케줄 시작을 출근 시각으로 본다)
+  assert.equal(resolveRecordedStartTime({ start: "07:30", ruleText: "자율출퇴근" }), "07:30");
 });
 
 test("오후 반차처럼 늦게 출근하고 퇴근이 없으면 규칙상 퇴근 시각을 적용한다", () => {
@@ -161,6 +195,19 @@ test("정시 출퇴근으로 보정되면 더 이상 이상치가 아니다", ()
       approvedNightMinutes: 0,
       approvedHolidayMinutes: 0
     }),
+    false
+  );
+});
+
+test("미신청 자율출퇴근에서 퇴근이 출근보다 이르면 수기 확인 대상으로 본다", () => {
+  // 자율출퇴근은 출근 시각 기준 근무시간대가 잡히므로 역전된 펀치(09:02 < 13:53)는 이상치다
+  assert.equal(
+    isUnapprovedRangeInvalid({ start: "13:53", end: "09:02", ruleText: "자율출퇴근" }),
+    true
+  );
+  // 고정 근무시간대가 없는 휴일근무의 짧은 야간 교대(23:30~00:30)는 이상치로 보지 않는다
+  assert.equal(
+    isUnapprovedRangeInvalid({ start: "23:30", end: "00:30", ruleText: "휴일근무" }),
     false
   );
 });
