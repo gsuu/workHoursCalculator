@@ -902,6 +902,21 @@ export const parseMonthlyResultFiles = async ({ attendanceFile, detailFile }) =>
   });
 };
 
+// 임신기 단축근무 등 연장근로 법적 특례 인원. 임신 중 여성근로자는 연장근로(시간외근로)가
+// 금지되고(근로기준법 제74조 ⑤, 위반 시 처벌), 단축근무자의 연장 인정 기준도 단축 정시가
+// 아니라 법정 8시간이라 자동계산(단축 정시 초과 = 연장)을 그대로 쓰면 과다/위법 집계가 된다.
+// 그래서 해당 사번의 단축근무 + 승인연장 일자는 자동집계에서 빼고 '수기 확인'으로만 표시해
+// 담당자가 노무 기준에 맞춰 직접 처리하게 한다. (임신/단축 사유는 데이터로 알 수 없어 사번을
+// 직접 지정한다 — 단축근무가 끝나면 해당 일자엔 자동으로 적용되지 않으며, 상태 변경 시 갱신/제거.)
+const MANUAL_REVIEW_EMPLOYEE_IDS = new Set([
+  "CT19040030" // 박진아 — 임신기 단축근무
+]);
+
+const requiresManualOvertimeReview = ({ employeeId, ruleText, detail }) =>
+  MANUAL_REVIEW_EMPLOYEE_IDS.has(employeeId)
+  && SHORT_SHIFT_PATTERN.test(normalizeText(ruleText))
+  && hasApprovedOvertime(detail);
+
 // Builds the per-worker monthly result from already-parsed inputs. Shared by the Excel
 // import (parseMonthlyResultFiles) and the in-place data migration so both run the exact
 // same calculation + aggregation. `records` is any iterable of attendance records.
@@ -1018,6 +1033,39 @@ export const assembleMonthlyResult = ({ detailEmployees, detailRules, records, m
         halfLeaveLabel: record.halfLeaveLabel,
         halfLeavePosition: record.halfLeavePosition,
         issueText: "수기 확인 필요"
+      }));
+      current.issueCount += 1;
+      appendIssueDate(current, record.date);
+      workerMap.set(record.employeeId, current);
+      continue;
+    }
+
+    if (requiresManualOvertimeReview({ employeeId: record.employeeId, ruleText, detail })) {
+      current.dailyRecords.push(createDailyRecord({
+        date: record.date,
+        workModeLabel: workModeOverride === "holiday"
+          ? "휴일"
+          : workModeOverride === "offday"
+            ? "휴무일"
+            : "평일",
+        start,
+        end,
+        recordedStart: record.start,
+        recordedEnd: record.end,
+        scheduledStartTime,
+        scheduledEndTime,
+        halfLeaveLabel: record.halfLeaveLabel,
+        halfLeavePosition: record.halfLeavePosition,
+        hasApprovedOvertime: hasApprovedOvertime(detail),
+        approvedOvertimeMinutes: detail?.overtimeMinutes ?? 0,
+        approvedNightMinutes: detail?.nightMinutes ?? 0,
+        approvedHolidayMinutes: detail?.holidayMinutes ?? 0,
+        detailRuleText: ruleText,
+        detailOvertimeMinutes: detail?.overtimeMinutes ?? 0,
+        detailNightMinutes: detail?.nightMinutes ?? 0,
+        detailHolidayMinutes: detail?.holidayMinutes ?? 0,
+        // 화면에 노출되는 라벨은 임신 사실을 드러내지 않도록 중립적으로 둔다(사유는 위 주석/사번 목록).
+        issueText: "단축근무 수기확인"
       }));
       current.issueCount += 1;
       appendIssueDate(current, record.date);

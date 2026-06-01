@@ -79655,17 +79655,23 @@ export const PRELOADED_MONTHLY_DATASETS = [
         "div": "",
         "rank": "",
         "nightMinutes": 0,
-        "overtimeMinutes": 519,
+        "overtimeMinutes": 0,
         "holidayOvertimeMinutes": 0,
         "holidayNightMinutes": 0,
         "holidayWorkMinutes": 0,
         "holidayOvertimeGrantMinutes": 0,
         "holidayNightGrantMinutes": 0,
         "holidayGrantMinutes": 0,
-        "leaveGrantMinutes": 778.5,
-        "overtimeDayCount": 5,
-        "issueCount": 0,
-        "issueDates": [],
+        "leaveGrantMinutes": 0,
+        "overtimeDayCount": 0,
+        "issueCount": 5,
+        "issueDates": [
+          "2026-03-12",
+          "2026-03-16",
+          "2026-03-18",
+          "2026-03-24",
+          "2026-03-26"
+        ],
         "dailyRecords": [
           {
             "date": "2026-03-03",
@@ -79824,9 +79830,9 @@ export const PRELOADED_MONTHLY_DATASETS = [
             "detailOvertimeMinutes": 60,
             "detailNightMinutes": 0,
             "detailHolidayMinutes": 0,
-            "overtimeMinutes": 60,
+            "overtimeMinutes": 0,
             "nightMinutes": 0,
-            "issueText": ""
+            "issueText": "단축근무 수기확인"
           },
           {
             "date": "2026-03-13",
@@ -79870,9 +79876,9 @@ export const PRELOADED_MONTHLY_DATASETS = [
             "detailOvertimeMinutes": 180,
             "detailNightMinutes": 0,
             "detailHolidayMinutes": 0,
-            "overtimeMinutes": 180,
+            "overtimeMinutes": 0,
             "nightMinutes": 0,
-            "issueText": ""
+            "issueText": "단축근무 수기확인"
           },
           {
             "date": "2026-03-17",
@@ -79916,9 +79922,9 @@ export const PRELOADED_MONTHLY_DATASETS = [
             "detailOvertimeMinutes": 120,
             "detailNightMinutes": 0,
             "detailHolidayMinutes": 0,
-            "overtimeMinutes": 120,
+            "overtimeMinutes": 0,
             "nightMinutes": 0,
-            "issueText": ""
+            "issueText": "단축근무 수기확인"
           },
           {
             "date": "2026-03-19",
@@ -80008,9 +80014,9 @@ export const PRELOADED_MONTHLY_DATASETS = [
             "detailOvertimeMinutes": 99,
             "detailNightMinutes": 0,
             "detailHolidayMinutes": 0,
-            "overtimeMinutes": 99,
+            "overtimeMinutes": 0,
             "nightMinutes": 0,
-            "issueText": ""
+            "issueText": "단축근무 수기확인"
           },
           {
             "date": "2026-03-25",
@@ -80054,9 +80060,9 @@ export const PRELOADED_MONTHLY_DATASETS = [
             "detailOvertimeMinutes": 60,
             "detailNightMinutes": 0,
             "detailHolidayMinutes": 0,
-            "overtimeMinutes": 60,
+            "overtimeMinutes": 0,
             "nightMinutes": 0,
-            "issueText": ""
+            "issueText": "단축근무 수기확인"
           },
           {
             "date": "2026-03-27",
@@ -80129,11 +80135,11 @@ export const PRELOADED_MONTHLY_DATASETS = [
           }
         ],
         "nightLabel": "0시간 0분",
-        "overtimeLabel": "8시간 39분",
+        "overtimeLabel": "0시간 0분",
         "holidayOvertimeConvertedHours": 0,
         "holidayNightConvertedHours": 0,
-        "roundedGrantMinutes": 750,
-        "leaveGrantLabel": "12시간 30분"
+        "roundedGrantMinutes": 0,
+        "leaveGrantLabel": "0시간 0분"
       },
       {
         "employeeId": "CT26010020",

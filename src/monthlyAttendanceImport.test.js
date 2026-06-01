@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  assembleMonthlyResult,
   hasApprovedOvertime,
   inferDefaultEndTime,
   inferScheduledEndTimeFromRule,
@@ -262,6 +263,53 @@ test("연장근무 일수는 상세표 승인값이 있을 때만 집계한다",
     }),
     true
   );
+});
+
+test("임신기 단축근무 지정 사번의 단축근무 승인연장일은 자동집계 대신 수기 확인으로 표시한다", () => {
+  const detailEmployees = new Map([
+    ["CT19040030", { employeeId: "CT19040030", name: "박진아", part: "테스트" }]
+  ]);
+  const detailRules = new Map([
+    ["CT19040030:2026-03-16", { ruleText: "단축근무10-17시", overtimeMinutes: 180, nightMinutes: 0, holidayMinutes: 0 }]
+  ]);
+  const records = [
+    { employeeId: "CT19040030", name: "박진아", part: "테스트", date: "2026-03-16", start: "09:52", end: "20:04", halfLeaveLabel: "", halfLeavePosition: "" }
+  ];
+
+  const { workers } = assembleMonthlyResult({
+    detailEmployees,
+    detailRules,
+    records,
+    monthInfo: { year: 2026, month: 3 },
+    sourceCount: records.length
+  });
+
+  assert.equal(workers[0].overtimeMinutes, 0);
+  assert.equal(workers[0].issueCount, 1);
+  assert.equal(workers[0].dailyRecords[0].issueText, "단축근무 수기확인");
+});
+
+test("지정되지 않은 사번은 동일한 단축근무 승인연장이어도 정상 자동집계한다", () => {
+  const detailEmployees = new Map([
+    ["CT00000000", { employeeId: "CT00000000", name: "대조군", part: "테스트" }]
+  ]);
+  const detailRules = new Map([
+    ["CT00000000:2026-03-16", { ruleText: "단축근무10-17시", overtimeMinutes: 180, nightMinutes: 0, holidayMinutes: 0 }]
+  ]);
+  const records = [
+    { employeeId: "CT00000000", name: "대조군", part: "테스트", date: "2026-03-16", start: "09:52", end: "20:04", halfLeaveLabel: "", halfLeavePosition: "" }
+  ];
+
+  const { workers } = assembleMonthlyResult({
+    detailEmployees,
+    detailRules,
+    records,
+    monthInfo: { year: 2026, month: 3 },
+    sourceCount: records.length
+  });
+
+  assert.equal(workers[0].issueCount, 0);
+  assert.ok(workers[0].overtimeMinutes > 0);
 });
 
 test("근태현황 검증은 근무결과(상세) 형식 파일을 거부한다", () => {
