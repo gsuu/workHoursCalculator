@@ -55,6 +55,8 @@ const attendanceImportStatus = ref(createFileStatus(null));
 const detailImportStatus = ref(createFileStatus(null));
 const monthlyWorkers = ref(PRELOADED_MONTHLY_WORKERS);
 const monthlyPeriodLabel = ref(PRELOADED_MONTHLY_PERIOD_LABEL);
+// "preloaded"(기본 사전계산 표) | "import"(사용자가 직접 업로드한 결과)
+const monthlySource = ref("preloaded");
 const previousCarryHoursMap = ref({});
 const selectedPart = ref("all");
 const selectedSort = ref("name");
@@ -102,6 +104,7 @@ const selectPreloadedMonth = (periodLabel) => {
   if (!dataset) return;
   monthlyWorkers.value = dataset.workers;
   monthlyPeriodLabel.value = dataset.periodLabel;
+  monthlySource.value = "preloaded";
   selectedPart.value = "all";
   selectedSort.value = "name";
   selectedWorkerId.value = "";
@@ -113,6 +116,28 @@ const MONTHLY_DB_NAME = "work-hours-calculator";
 const MONTHLY_DB_VERSION = 1;
 const MONTHLY_STORE_NAME = "monthly-results";
 const MONTHLY_SNAPSHOT_KEY = "monthly-snapshot";
+
+// preloaded 데이터가 갱신되면 바뀌는 서명. 저장된 스냅샷의 서명이 이와 다르거나(또는 없으면)
+// 옛 preloaded 사본으로 보고 최신 preloaded로 다시 시드한다 — 월별 자동 갱신/수정이 재방문자에게도
+// 반영되도록(사용자가 업로드한 import 데이터와 이월휴가 입력은 보존). employeeId + 주요 수치로 구성.
+const PRELOADED_MONTHLY_SIGNATURE = (() => {
+  const parts = [];
+  for (const dataset of PRELOADED_MONTHLY_DATASETS) {
+    parts.push(dataset.periodLabel ?? "");
+    for (const worker of dataset.workers ?? []) {
+      parts.push(
+        `${worker.employeeId}/${worker.overtimeMinutes}/${worker.nightMinutes}/${worker.leaveGrantMinutes}`
+        + `/${worker.holidayOvertimeMinutes}/${worker.holidayNightMinutes}/${worker.issueCount}`
+      );
+    }
+  }
+  const text = parts.join("|");
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (Math.imul(hash, 31) + text.charCodeAt(index)) | 0;
+  }
+  return `v1:${hash}`;
+})();
 
 const now = new Date();
 const latestDownloadDate = new Date(now.getFullYear(), now.getMonth(), 0);
@@ -795,6 +820,7 @@ const applyMonthlyFiles = async () => {
       detailFile: detailImportFile.value
     });
     monthlyWorkers.value = parsed.workers;
+    monthlySource.value = "import";
     updateImportStatus("attendance", attendanceImportFile.value, "valid");
     updateImportStatus("detail", detailImportFile.value, "valid");
     if (parsed.monthInfo?.year && parsed.monthInfo?.month) {
@@ -898,9 +924,26 @@ onMounted(async () => {
   try {
     const snapshot = await readMonthlySnapshot();
     if (snapshot?.workers?.length) {
-      monthlyWorkers.value = snapshot.workers;
-      monthlyPeriodLabel.value = snapshot.periodLabel || PRELOADED_MONTHLY_PERIOD_LABEL;
+      // 이월휴가 입력은 항상 보존
       previousCarryHoursMap.value = snapshot.previousCarryHoursMap || {};
+
+      const isImport = snapshot.source === "import";
+      const isStalePreloaded = !isImport && snapshot.datasetVersion !== PRELOADED_MONTHLY_SIGNATURE;
+
+      if (isStalePreloaded) {
+        // 저장된 옛 preloaded 사본 무시 → 보던 월의 최신 preloaded로 다시 시드
+        const freshDataset = PRELOADED_MONTHLY_DATASETS.find(
+          (dataset) => dataset.periodLabel === snapshot.periodLabel
+        );
+        monthlyWorkers.value = freshDataset?.workers ?? PRELOADED_MONTHLY_WORKERS;
+        monthlyPeriodLabel.value = freshDataset?.periodLabel ?? PRELOADED_MONTHLY_PERIOD_LABEL;
+        monthlySource.value = "preloaded";
+      } else {
+        // 사용자 업로드(import) 또는 동일 버전 preloaded → 저장본 그대로 복원
+        monthlyWorkers.value = snapshot.workers;
+        monthlyPeriodLabel.value = snapshot.periodLabel || PRELOADED_MONTHLY_PERIOD_LABEL;
+        monthlySource.value = isImport ? "import" : "preloaded";
+      }
     }
   } finally {
     persistenceReady.value = true;
@@ -916,7 +959,9 @@ watch(
       await writeMonthlySnapshot({
         workers: monthlyWorkers.value,
         periodLabel: monthlyPeriodLabel.value,
-        previousCarryHoursMap: previousCarryHoursMap.value
+        previousCarryHoursMap: previousCarryHoursMap.value,
+        source: monthlySource.value,
+        datasetVersion: PRELOADED_MONTHLY_SIGNATURE
       });
     } catch (error) {
       console.error(error);
